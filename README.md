@@ -1,83 +1,123 @@
-🎲 Bingo App
+# 🎲 Bingo App
 
-¡Bienvenido a la aplicación de Bingo! Una herramienta interactiva y fácil de usar diseñada para gestionar partidas de bingo, ya sea de forma manual o automática (tómbola). Ideal para proyectar en una pantalla grande y mantener a todos al tanto de los números sorteados.
-✨ Características
+## 🎯 Descripción General
 
-    Modo Manual: Ingresa los números uno por uno a medida que se van dictando.
+Este proyecto es una aplicación web interactiva y fácil de usar, diseñada específicamente para gestionar y visualizar partidas de bingo. Es ideal para ser proyectada en una pantalla grande (como un proyector o TV), permitiendo que todos los participantes sigan de cerca los números sorteados de manera clara y visible.
 
-    Modo Tómbola: Permite al sistema sortear números aleatoriamente con una animación visual.
+Ofrece flexibilidad tanto para el ingreso manual de números como para un sorteo automático tipo "tómbola", e incluye herramientas para corregir errores y configurar la tabla.
 
-    Visualización Clara: Muestra el último número sorteado y el anterior para facilitar el seguimiento.
+---
 
-    Tablero Dinámico: Un tablero de bingo que se actualiza en tiempo real, marcando los números a medida que salen.
+## ✨ Características y Módulos Clave
 
-    Búsqueda de Números: Busca rápidamente si un número específico ya ha sido sorteado y lo resalta en el tablero.
+### 1. Gestión de Números
 
-    Corrección de Errores: Opción para "desmarcar" un número si fue ingresado por error en modo manual.
+* **Modo Manual:** Permite al usuario ingresar los números uno por uno a medida que son dictados, marcándolos en el tablero.
+* **Modo Tómbola:** Ofrece una funcionalidad de sorteo automático de números aleatorios, acompañada de una animación visual para una experiencia más dinámica.
+* **Visualización de Últimos Números:** Muestra claramente el último número sorteado y el número anterior, facilitando el seguimiento del juego.
 
-    Configuración Personalizable: Ajusta el número máximo de la tabla (ej. de 1 a 150) para adaptarse a diferentes variantes de bingo.
+### 2. Interacción con el Tablero
 
-    Diseño Responsivo: Adaptado para funcionar y verse bien en diferentes tamaños de pantalla, desde dispositivos móviles hasta proyectores y televisores.
+* **Tablero Dinámico:** Un tablero de bingo que se actualiza en tiempo real, resaltando visualmente los números a medida que son ingresados o sorteados. El tamaño de las celdas está optimizado para una alta visibilidad en pantallas grandes.
+* **Búsqueda de Números:** Permite buscar rápidamente si un número específico ya ha sido sorteado y lo resalta temporalmente en el tablero para su fácil ubicación.
+* **Corrección de Errores:** Incluye una opción para "desmarcar" un número que haya sido ingresado o sorteado por error en el modo manual, permitiendo corregir el estado del tablero.
 
-    Notificaciones Interactivas: Mensajes de confirmación y error mediante toasts (SweetAlert2) que se pueden cerrar con un clic o con un botón "X".
+### 3. Configuración y Usabilidad
 
-    Control de Dropdown: El menú de configuración se cierra automáticamente al hacer clic fuera de él.
+* **Configuración Personalizable:** A través de un menú de configuración (accesible mediante un icono de tuerca), se puede ajustar el número máximo de la tabla de bingo (ej. de 1 a 150), adaptándose a diferentes variantes del juego.
+* **Diseño Responsivo:** La interfaz está diseñada para adaptarse y funcionar correctamente en una amplia gama de dispositivos y tamaños de pantalla, desde móviles hasta proyectores y televisores.
+* **Notificaciones Interactivas:** Utiliza *toasts* (notificaciones emergentes) para mensajes de éxito, advertencia o error. Estas notificaciones se pueden cerrar haciendo clic en ellas o mediante un botón "X" dedicado.
+* **Control de Dropdown Mejorado:** El menú de configuración se cierra automáticamente al detectar un clic fuera de su área, mejorando la experiencia de usuario.
 
-🛠️ Tecnologías Utilizadas
+---
 
-Este proyecto fue construido utilizando las siguientes tecnologías modernas:
+## 🛠️ Tecnologías Utilizadas
 
-    Vite: Un bundler de próxima generación para proyectos web, que ofrece un desarrollo rápido y optimizado.
+Este proyecto fue construido utilizando las siguientes tecnologías modernas para asegurar un desarrollo eficiente y un rendimiento óptimo:
 
-    TypeScript: Un superset de JavaScript que añade tipado estático, mejorando la robustez y mantenibilidad del código.
+### Frontend
 
-    Tailwind CSS: Un framework CSS de bajo nivel que permite construir diseños personalizados rápidamente con clases de utilidad.
+* **Vite:** Un bundler de próxima generación que proporciona un entorno de desarrollo frontend extremadamente rápido.
+* **TypeScript:** Un superset de JavaScript que añade tipado estático, lo que mejora la calidad del código, la detección de errores y la mantenibilidad.
+* **Tailwind CSS:** Un framework CSS utilitario que permite construir diseños personalizados directamente en el HTML, fomentando un desarrollo ágil y responsivo.
+* **Font Awesome:** Una popular biblioteca de iconos vectoriales escalables, utilizada para los elementos visuales de la interfaz.
+* **SweetAlert2:** Una librería para crear alertas y modales personalizables, atractivos e interactivos, utilizada para las notificaciones *toast*.
 
-    Font Awesome: Biblioteca de iconos escalables para elementos visuales.
+---
 
-    SweetAlert2: Una librería para crear alertas y modales personalizables e interactivos.
+## 🚀 Instalación y Configuración (para desarrolladores)
 
-🚀 Instalación y Ejecución
+### Prerrequisitos
 
-Sigue estos pasos para tener el proyecto funcionando en tu máquina local.
-Prerrequisitos
+Asegúrate de tener [Node.js](https://nodejs.org/) (que incluye npm) instalado en tu sistema.
 
-Asegúrate de tener Node.js y npm (o yarn) instalados en tu sistema.
+### Pasos
 
-    Node.js (incluye npm)
+1. **Clonar el repositorio:**
 
-Pasos
+   ```bash
+   git clone git@github.com:JaviMejias/bingo.git
+   cd bingo
+   ```
 
-    Clonar el repositorio:
+   > Si tienes problemas con SSH, puedes usar HTTPS:
 
-    git clone git@github.com:JaviMejias/bingo.git
-    cd bingo
+   ```bash
+   git clone https://github.com/JaviMejias/bingo.git
+   cd bingo
+   ```
 
-    Nota: Si tienes problemas con SSH, puedes usar HTTPS:
+2. **Instalar dependencias:**
 
-    git clone https://github.com/JaviMejias/bingo.git
-    cd bingo
+   ```bash
+   npm install
+   ```
 
-    Instalar dependencias:
+   o si usas Yarn:
 
-    npm install
-    # o si usas yarn
-    # yarn install
+   ```bash
+   yarn install
+   ```
 
-    Ejecutar la aplicación en modo desarrollo:
+3. **Ejecutar la aplicación en modo desarrollo:**
 
-    npm run dev
-    # o si usas yarn
-    # yarn dev
+   ```bash
+   npm run dev
+   ```
 
-    Esto iniciará un servidor de desarrollo y abrirá la aplicación en tu navegador predeterminado (generalmente en http://localhost:5173/).
+   o con Yarn:
 
-    Construir para producción (opcional):
+   ```bash
+   yarn dev
+   ```
 
-    Si deseas generar una versión optimizada para despliegue, ejecuta:
+   Esto iniciará un servidor de desarrollo y abrirá la aplicación en tu navegador predeterminado (generalmente en `http://localhost:5173/`).
 
-    npm run build
-    # o si usas yarn
-    # yarn build
+4. **Construir para producción (opcional):**
 
-    Esto creará los archivos de producción en la carpeta dist/.
+   Si deseas generar una versión optimizada de la aplicación para despliegue, ejecuta:
+
+   ```bash
+   npm run build
+   ```
+
+   o con Yarn:
+
+   ```bash
+   yarn build
+   ```
+
+   Esto creará los archivos de producción estáticos en la carpeta `dist/`.
+
+---
+
+## 👨‍💻 Autor
+
+**Javier Mejías** – Desarrollador Full-Stack
+[Perfil de LinkedIn](www.linkedin.com/in/javier-mejías-655a7936a)
+
+---
+
+## 📄 Licencia
+
+Este proyecto está licenciado bajo la MIT License. Consulta el archivo [LICENSE](LICENSE) para más detalles.
