@@ -1,0 +1,131 @@
+<div class="bg-white rounded-xl shadow-2xl p-2 sm:p-3 pt-4 w-full transform transition-all duration-300 hover:scale-[1.01] max-h-[calc(100vh-2rem)] overflow-y-auto relative">
+  <div class="absolute top-4 right-4 z-20">
+    <div class="relative inline-block text-left">
+      <div>
+        <button type="button" id="gameModeDropdownButton" class="inline-flex justify-center items-center p-3 rounded-full bg-gray-700 text-white shadow-md hover:bg-gray-800 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-offset-gray-100 focus:ring-indigo-500 transition-colors duration-300" aria-expanded="true" aria-haspopup="true">
+          <i class="fas fa-cog text-xl"></i>
+          <i id="dropdownArrow" class="fas fa-chevron-down ml-2 -mr-1 transition-transform duration-300"></i>
+        </button>
+      </div>
+      <div id="gameModeDropdownContent" class="origin-top-right absolute right-0 mt-2 w-48 rounded-md shadow-lg bg-white ring-1 ring-black ring-opacity-5 focus:outline-none z-10 max-h-0 overflow-hidden transition-all duration-300 ease-in-out transform scale-y-0" role="menu" aria-orientation="vertical" aria-labelledby="menu-button" tabindex="-1">
+        <div class="py-1" role="none">
+          <button id="modeManualButton" class="text-gray-700 block px-4 py-2 text-base sm:text-lg w-full text-left hover:bg-gray-100 transition-colors duration-200" role="menuitem" tabindex="-1">
+            <i class="fas fa-keyboard mr-2"></i>
+            <span>Modo Manual</span>
+          </button>
+          <button id="modeTombolaButton" class="text-gray-700 block px-4 py-2 text-base sm:text-lg w-full text-left hover:bg-gray-100 transition-colors duration-200" role="menuitem" tabindex="-1">
+            <i class="fas fa-dice mr-2"></i>
+            <span>Modo Tómbola</span>
+          </button>
+          <button id="configButton" class="text-gray-700 block px-4 py-2 text-base sm:text-lg w-full text-left hover:bg-gray-100 transition-colors duration-200" role="menuitem" tabindex="-1">
+            <i class="fas fa-cog mr-2"></i>
+            <span>Configurar Tabla</span>
+          </button>
+          <button
+            id="resetButton"
+            class="text-red-600 block px-4 py-2 text-base sm:text-lg w-full text-left hover:bg-red-50 transition-colors duration-200"
+            role="menuitem" tabindex="-1"
+          >
+            <i class="fas fa-redo mr-2"></i>
+            <span>Reiniciar Juego</span>
+          </button>
+        </div>
+      </div>
+    </div>
+  </div>
+  <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3 sm:gap-4 mb-4 mt-16 sm:mt-8">
+    <div id="actionInputContainer" class="flex flex-col space-y-2 relative">
+      <div id="manualInputSection" class="flex flex-col space-y-2 w-full">
+        <label for="inputNumber" class="text-base text-center sm:text-lg font-semibold text-gray-700">Ingresar Número:</label>
+        <div class="flex">
+          <input
+            type="number"
+            id="inputNumber"
+            min="1"
+            max="75"
+            placeholder="Ej: 25"
+            class="flex-grow p-2 sm:p-3 border border-gray-300 rounded-l-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-base sm:text-lg text-gray-900"
+          />
+          <button
+            id="enterNumberBtn"
+            class="bg-blue-600 hover:bg-blue-700 text-white font-bold py-2 px-4 sm:py-3 sm:px-6 rounded-r-lg shadow-md transition-colors duration-300 text-base sm:text-lg flex items-center justify-center space-x-2"
+          >
+            <i class="fas fa-plus"></i>
+            <span>Ingresar</span>
+          </button>
+        </div>
+      </div>
+      <div id="tombolaButtonSection" class="flex flex-col space-y-2 w-full absolute top-0 left-0 hidden">
+        <label class="text-base sm:text-lg font-semibold text-gray-700 opacity-0">Espaciador</label>
+        <button
+          id="tombolaButton"
+          class="bg-green-500 hover:bg-green-600 text-white font-bold py-2 px-6 rounded-lg shadow-md transition-colors duration-300 text-lg flex items-center justify-center space-x-2 w-full h-full"
+        >
+          <i class="fas fa-dice"></i>
+          <span>Tómbola</span>
+        </button>
+      </div>
+    </div>
+    <div class="flex flex-col space-y-2">
+      <label for="searchNumber" class="text-base text-center sm:text-lg font-semibold text-gray-700">Buscar Número:</label>
+      <div class="flex">
+        <input
+          type="number"
+          id="searchNumber"
+          min="1"
+          max="75"
+          placeholder="Ej: 50"
+          class="flex-grow p-2 sm:p-3 border border-gray-300 rounded-l-lg focus:outline-none focus:ring-2 focus:ring-purple-500 text-base sm:text-lg text-gray-900"
+        />
+        <button
+          id="searchNumberBtn"
+          class="bg-purple-600 hover:bg-purple-700 text-white font-bold py-2 px-4 sm:py-3 sm:px-6 rounded-r-lg shadow-md transition-colors duration-300 text-base sm:text-lg flex items-center justify-center space-x-2"
+        >
+          <i class="fas fa-search"></i>
+          <span>Buscar</span>
+        </button>
+      </div>
+    </div>
+    <div id="correctNumberSection" class="flex flex-col space-y-2">
+        <label for="correctNumberInput" class="text-base text-center sm:text-lg font-semibold text-gray-700">Corregir Número:</label>
+        <div class="flex">
+            <input
+                type="number"
+                id="correctNumberInput"
+                min="1"
+                max="75"
+                placeholder="Ej: 15 (para desmarcar)"
+                class="flex-grow p-2 sm:p-3 border border-gray-300 rounded-l-lg focus:outline-none focus:ring-2 focus:ring-orange-500 text-base sm:text-lg text-gray-900"
+            />
+            <button
+                id="correctNumberBtn"
+                class="bg-orange-500 hover:bg-orange-600 text-white font-bold py-2 px-4 sm:py-3 sm:px-6 rounded-r-lg shadow-md transition-colors duration-300 text-base sm:text-lg flex items-center justify-center space-x-2"
+            >
+                <i class="fas fa-undo"></i>
+                <span>Corregir</span>
+            </button>
+        </div>
+    </div>
+  </div>
+  <div class="mb-4 text-center grid grid-cols-2 gap-4">
+    <div>
+      <p class="text-lg sm:text-xl font-bold text-gray-800 mb-2">Último Ingresado:</p>
+      <div id="lastNumberDisplay" class="text-4xl sm:text-5xl font-extrabold text-blue-700 bg-blue-100 rounded-full w-20 h-20 sm:w-24 sm:h-24 flex items-center justify-center mx-auto border-4 border-blue-300 shadow-inner">
+        --
+      </div>
+    </div>
+    <div>
+      <p class="text-lg sm:text-xl font-bold text-gray-800 mb-2">Anterior:</p>
+      <div id="previousLastNumberDisplay" class="text-4xl sm:text-5xl font-extrabold text-gray-600 bg-gray-100 rounded-full w-20 h-20 sm:w-24 sm:h-24 flex items-center justify-center mx-auto border-4 border-gray-300 shadow-inner">
+        --
+      </div>
+    </div>
+  </div>
+  <div id="bingoBoard" class="grid grid-cols-8 grid-flow-col grid-rows-10 gap-1 sm:gap-2 p-2 sm:p-3 bg-gray-50 rounded-lg shadow-inner border border-gray-200">
+  </div>
+</div>
+<div id="tombolaModal" class="fixed inset-0 bg-black bg-opacity-75 flex items-center justify-center z-50 hidden">
+  <div class="bg-gradient-to-br from-yellow-400 to-orange-500 rounded-full w-64 h-64 sm:w-80 sm:h-80 flex items-center justify-center shadow-2xl animate-spin-slow">
+    <span id="tombolaNumberDisplay" class="text-white text-7xl sm:text-9xl font-extrabold drop-shadow-lg animate-fade-in">--</span>
+  </div>
+</div>
