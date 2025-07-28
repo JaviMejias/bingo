@@ -1,5 +1,3 @@
-// En tu archivo: BingoControls.ts
-
 import Swal from 'sweetalert2'
 import type { GameRoom } from '../types/game'
 import { updateDoc, doc, getDoc } from 'firebase/firestore'
@@ -9,12 +7,11 @@ export function renderBingoControls(room: GameRoom) {
   const controls = document.getElementById('controls')
   if (!controls) {
     console.warn('No se encontró el contenedor de controles (#controls).')
-    return;
+    return
   }
 
-  // Solo renderizar el HTML si el contenedor está vacío.
   if (controls.children.length > 0) {
-      return; 
+    return
   }
 
   controls.innerHTML = `
@@ -63,14 +60,14 @@ export function renderBingoControls(room: GameRoom) {
           opacity-0 scale-95
         ">
           <button id="drawTombolaBtnControls" class="
-            block w-full text-left px-4 py-3 text-base 
+            w-full text-left px-4 py-3 text-base 
             hover:bg-gray-100 transition-colors duration-150 ease-in-out
             flex items-center
           ">
             <i class="fas fa-dice mr-3 text-blue-500"></i> Sacar Número (Tómbola)
           </button>
           <button id="configMaxNumBtnControls" class="
-            block w-full text-left px-4 py-3 text-base 
+            w-full text-left px-4 py-3 text-base 
             hover:bg-gray-100 transition-colors duration-150 ease-in-out
             flex items-center
           ">
@@ -78,7 +75,7 @@ export function renderBingoControls(room: GameRoom) {
           </button>
           <hr class="border-gray-200 my-1">
           <button id="resetGameBtnControls" class="
-            block w-full text-left px-4 py-3 text-base 
+            w-full text-left px-4 py-3 text-base 
             hover:bg-red-50 text-red-700 font-semibold transition-colors duration-150 ease-in-out
             flex items-center
           ">
@@ -87,96 +84,89 @@ export function renderBingoControls(room: GameRoom) {
         </div>
       </div>
     </div>
-  `;
+  `
 
-  // Attach listeners for input/search numbers
-  const roomRef = doc(db, 'gameRooms', room.id); 
-
-  const inputNumber = document.getElementById('inputNumber') as HTMLInputElement;
-  const enterButton = document.getElementById('enterNumberBtn') as HTMLButtonElement;
-  const searchInput = document.getElementById('searchNumber') as HTMLInputElement;
-  const searchButton = document.getElementById('searchNumberBtn') as HTMLButtonElement;
+  const roomRef = doc(db, 'gameRooms', room.id) 
+  const inputNumber = document.getElementById('inputNumber') as HTMLInputElement
+  const enterButton = document.getElementById('enterNumberBtn') as HTMLButtonElement
+  const searchInput = document.getElementById('searchNumber') as HTMLInputElement
+  const searchButton = document.getElementById('searchNumberBtn') as HTMLButtonElement
 
   async function ingresarNumero() {
-    const number = parseInt(inputNumber.value);
+    const number = parseInt(inputNumber.value)
     if (isNaN(number)) {
-      Swal.fire('Atención', 'Por favor, ingresa un número válido.', 'warning');
-      return;
+      Swal.fire('Atención', 'Por favor, ingresa un número válido.', 'warning')
+      return
     }
 
-    const snapshot = await getDoc(roomRef);
-    const latestData = snapshot.data() as GameRoom;
+    const snapshot = await getDoc(roomRef)
+    const latestData = snapshot.data() as GameRoom
 
     if (number < 1 || number > latestData.maxNumber) {
-      Swal.fire('Número fuera de rango', `El número debe estar entre 1 y ${latestData.maxNumber}.`, 'warning');
-      inputNumber.value = '';
-      inputNumber.focus();
-      return;
+      Swal.fire('Número fuera de rango', `El número debe estar entre 1 y ${latestData.maxNumber}.`, 'warning')
+      inputNumber.value = ''
+      inputNumber.focus()
+      return
     }
 
     if (latestData.drawnNumbers.includes(number)) {
-      Swal.fire('Número ya ingresado', 'Este número ya ha sido sorteado.', 'info');
-      inputNumber.value = '';
-      inputNumber.focus();
-      return;
+      Swal.fire('Número ya ingresado', 'Este número ya ha sido sorteado.', 'info')
+      inputNumber.value = ''
+      inputNumber.focus()
+      return
     }
 
-    const updatedNumbers = [...latestData.drawnNumbers, number];
+    const updatedNumbers = [...latestData.drawnNumbers, number]
     await updateDoc(roomRef, {
       drawnNumbers: updatedNumbers
-    });
+    })
 
-    inputNumber.value = '';
-    inputNumber.focus();
+    inputNumber.value = ''
+    inputNumber.focus()
   }
 
   function buscarNumero() {
-    const number = parseInt(searchInput.value);
+    const number = parseInt(searchInput.value)
     if (isNaN(number)) {
-        Swal.fire('Atención', 'Por favor, ingresa un número válido para buscar.', 'warning');
-        return;
+        Swal.fire('Atención', 'Por favor, ingresa un número válido para buscar.', 'warning')
+        return
     }
 
-    // Remover resaltados previos
     document.querySelectorAll('.highlight-search').forEach(el => {
-      el.classList.remove('highlight-search', 'ring', 'ring-yellow-300', 'scale-110');
-    });
+      el.classList.remove('highlight-search', 'ring', 'ring-yellow-300', 'scale-110')
+    })
 
-    // Añadimos un pequeño retraso para asegurar que el DOM se haya actualizado completamente
-    // y que la celda correcta sea seleccionada, especialmente después de un re-render parcial.
     setTimeout(() => {
-        const cell = document.querySelector<HTMLDivElement>(`#bingoBoard .grid > div:nth-child(${number})`);
-        if (cell) {
-          // Usamos 'ring-offset-2 ring-offset-gray-900' para que el anillo se vea bien sobre el fondo oscuro.
-          cell.classList.add('highlight-search', 'ring', 'ring-yellow-300', 'ring-offset-2', 'ring-offset-gray-900', 'scale-110', 'z-20'); // z-20 para asegurar que esté encima
-          cell.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      const cell = document.querySelector<HTMLDivElement>(`#bingoBoard .grid > div:nth-child(${number})`)
+      if (cell) {
+        cell.classList.add('highlight-search', 'ring', 'ring-yellow-300', 'ring-offset-2', 'ring-offset-gray-900', 'scale-110', 'z-20')
+        cell.scrollIntoView({ behavior: 'smooth', block: 'center' })
 
-          // Remover resaltado después de un tiempo
-          setTimeout(() => {
-            cell.classList.remove('highlight-search', 'ring', 'ring-yellow-300', 'ring-offset-2', 'ring-offset-gray-900', 'scale-110', 'z-20');
-          }, 2000); // 2 segundos
-        } else {
-            Swal.fire('Número no encontrado', `El número ${number} no existe en el tablero.`, 'info');
-        }
-    }, 50); // Pequeño retraso de 50ms
-    
-    searchInput.value = '';
-    searchInput.focus();
+        setTimeout(() => {
+          cell.classList.remove('highlight-search', 'ring', 'ring-yellow-300', 'ring-offset-2', 'ring-offset-gray-900', 'scale-110', 'z-20')
+        }, 2000)
+      } else {
+        Swal.fire('Número no encontrado', `El número ${number} no existe en el tablero.`, 'info')
+      }
+    }, 50)
+
+    searchInput.value = ''
+    searchInput.focus()
   }
 
-  enterButton.addEventListener('click', ingresarNumero);
+  enterButton.addEventListener('click', ingresarNumero)
   inputNumber.addEventListener('keydown', (e) => {
     if (e.key === 'Enter') {
-      e.preventDefault();
-      ingresarNumero();
+      e.preventDefault()
+      ingresarNumero()
     }
-  });
+  })
 
-  searchButton.addEventListener('click', buscarNumero);
+  searchButton.addEventListener('click', buscarNumero)
   searchInput.addEventListener('keydown', (e) => {
     if (e.key === 'Enter') {
-      e.preventDefault();
-      buscarNumero();
+      e.preventDefault()
+      buscarNumero()
     }
-  });
+  })
 }

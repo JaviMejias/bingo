@@ -38,26 +38,26 @@ export function renderHostView(room: GameRoom) {
     </div>
   `
 
-  const currentLastNumberEl = document.getElementById('currentLastNumber') as HTMLDivElement;
-  const previousLastNumberEl = document.getElementById('previousLastNumber') as HTMLDivElement;
-  const bingoBoardEl = document.getElementById('bingoBoard') as HTMLDivElement;
-  const controlsEl = document.getElementById('controls') as HTMLDivElement;
+  const currentLastNumberEl = document.getElementById('currentLastNumber') as HTMLDivElement
+  const previousLastNumberEl = document.getElementById('previousLastNumber') as HTMLDivElement
+  const bingoBoardEl = document.getElementById('bingoBoard') as HTMLDivElement
+  const controlsEl = document.getElementById('controls') as HTMLDivElement
 
   if (controlsEl) {
-    renderBingoControls(room);
+    renderBingoControls(room)
   } else {
-    console.warn('Contenedor #controls no encontrado en bingo-app.html.');
+    console.warn('Contenedor #controls no encontrado en bingo-app.html.')
   }
 
   if (bingoBoardEl) {
-    renderBingoBoard(room);
+    renderBingoBoard(room)
   } else {
-    console.warn('Contenedor #bingoBoard no encontrado en bingo-app.html.');
+    console.warn('Contenedor #bingoBoard no encontrado en bingo-app.html.')
   }
 
   if (currentLastNumberEl && previousLastNumberEl) {
-    renderLastNumbers(room, currentLastNumberEl, previousLastNumberEl);
+    renderLastNumbers(room, currentLastNumberEl, previousLastNumberEl)
   } else {
-    console.warn('Contenedores de últimos números (currentLastNumber, previousLastNumber) no encontrados en bingo-app.html.');
+    console.warn('Contenedores de últimos números (currentLastNumber, previousLastNumber) no encontrados en bingo-app.html.')
   }
 }
