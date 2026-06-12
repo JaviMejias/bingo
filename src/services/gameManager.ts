@@ -25,6 +25,8 @@ export async function createGameRoom(maxNumber = 75, mode: 'manual' | 'tombola' 
     maxNumber,
     drawnNumbers: [],
     currentMode: mode,
+    bingoCallers: [],
+    winnersHistory: []
   }
 
   await setDoc(roomRef, roomData)

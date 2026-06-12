@@ -50,7 +50,7 @@ export function renderHostView(room: GameRoom) {
   }
 
   if (bingoBoardEl) {
-    renderBingoBoard(room)
+    renderBingoBoard(room, true)
   } else {
     console.warn('Contenedor #bingoBoard no encontrado en bingo-app.html.')
   }

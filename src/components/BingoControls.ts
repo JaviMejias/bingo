@@ -4,98 +4,148 @@ import { updateDoc, doc, getDoc } from 'firebase/firestore'
 import { db } from '../services/firebase'
 
 export function renderBingoControls(room: GameRoom) {
-  const controls = document.getElementById('controls')
-  if (!controls) {
-    console.warn('No se encontró el contenedor de controles (#controls).')
-    return
-  }
+  const leftControls = document.getElementById('controls-left')
+  const rightControls = document.getElementById('controls-right')
+  const currentMode = room.currentMode || 'manual'
 
-  if (controls.children.length > 0) {
-    return
-  }
-
-  controls.innerHTML = `
-    <div class="
-      w-full flex flex-col sm:flex-row justify-between items-center 
-      gap-3
-    ">
-      <div class="flex flex-col sm:flex-row flex-wrap gap-2 items-center justify-center sm:justify-start w-full sm:w-auto">
-        <input type="number" id="inputNumber" placeholder="Ingresar #" class="
-          px-3 py-1.5 rounded-lg text-gray-900 bg-gray-100 border border-gray-400 
-          focus:outline-none focus:ring-2 focus:ring-blue-500 w-full sm:w-32
-          transition-all duration-300 ease-in-out shadow-inner hover:shadow-md
-        " />
-        <button id="enterNumberBtn" class="
-          bg-green-600 hover:bg-green-700 text-white font-semibold py-1.5 px-4 rounded-lg 
-          transition-all duration-200 ease-in-out transform hover:scale-105 shadow-md w-full sm:w-auto
-          flex items-center justify-center text-sm
-        ">
-          <i class="fas fa-plus-circle mr-1.5 text-base"></i> Ingresar
-        </button>
-        <input type="number" id="searchNumber" placeholder="Buscar #" class="
-          px-3 py-1.5 rounded-lg text-gray-900 bg-gray-100 border border-gray-400 
-          focus:outline-none focus:ring-2 focus:ring-purple-500 w-full sm:w-32
-          transition-all duration-300 ease-in-out shadow-inner hover:shadow-md
-        " />
-        <button id="searchNumberBtn" class="
-          bg-purple-600 hover:bg-purple-700 text-white font-semibold py-1.5 px-4 rounded-lg 
-          transition-all duration-200 ease-in-out transform hover:scale-105 shadow-md w-full sm:w-auto
-          flex items-center justify-center text-sm
-        ">
-          <i class="fas fa-search mr-1.5 text-base"></i> Buscar
-        </button>
-      </div>
-
-      <div class="relative flex-shrink-0 z-10"> <button id="dropdownToggleControls" class="
-          text-white text-2xl bg-indigo-600 hover:bg-indigo-700 p-2.5 rounded-full 
-          focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-2 focus:ring-offset-gray-900 
-          transition-all duration-200 ease-in-out transform hover:rotate-90 hover:scale-110 shadow-lg
-          flex items-center justify-center
-        ">
-          <i class="fas fa-cog"></i> </button>
-        <div id="dropdownMenuControls" class="
-          absolute right-0 mt-2 w-56 bg-white text-gray-900 rounded-lg shadow-xl 
-          hidden overflow-hidden border border-gray-200
-          transform origin-top-right transition-all duration-300 ease-out
-          opacity-0 scale-95
-        ">
-          <button id="drawTombolaBtnControls" class="
-            w-full text-left px-4 py-3 text-base 
-            hover:bg-gray-100 transition-colors duration-150 ease-in-out
-            flex items-center
+  if (leftControls && (leftControls.children.length === 0 || leftControls.dataset.mode !== currentMode)) {
+    leftControls.dataset.mode = currentMode
+    if (currentMode === 'manual') {
+      leftControls.innerHTML = `
+        <div class="flex flex-row flex-wrap gap-2 items-center justify-center lg:justify-start animate-fade-in">
+          <div class="relative group">
+            <input type="number" id="inputNumber" min="1" max="${room.maxNumber}" placeholder="Nº" class="
+              px-4 py-3 w-28 sm:w-32 rounded-lg text-white bg-gray-900/50 border-2 border-gray-700 
+              focus:outline-none focus:border-neon-purple focus:ring-1 focus:ring-neon-purple text-center font-black text-lg
+              transition-all duration-300
+            " />
+          </div>
+          <button id="enterNumberBtn" class="
+            bg-neon-purple hover:bg-fuchsia-600 text-white font-bold py-3 px-6 rounded-lg 
+            transition-all duration-200 ease-in-out transform hover:scale-105 shadow-[0_0_10px_rgba(176,38,255,0.4)]
+            flex items-center justify-center text-base
           ">
-            <i class="fas fa-dice mr-3 text-blue-500"></i> Sacar Número (Tómbola)
+            <i class="fas fa-plus mr-1 sm:mr-2"></i> <span class="hidden sm:inline">Añadir</span>
           </button>
-          <button id="configMaxNumBtnControls" class="
-            w-full text-left px-4 py-3 text-base 
-            hover:bg-gray-100 transition-colors duration-150 ease-in-out
-            flex items-center
+
+          <div class="relative group ml-0 sm:ml-4">
+            <input type="number" id="searchNumber" min="1" max="${room.maxNumber}" placeholder="Nº" class="
+              px-4 py-3 w-28 sm:w-32 rounded-lg text-white bg-gray-900/50 border-2 border-gray-700 
+              focus:outline-none focus:border-neon-blue focus:ring-1 focus:ring-neon-blue text-center font-black text-lg
+              transition-all duration-300
+            " />
+          </div>
+          <button id="searchNumberBtn" class="
+            bg-neon-blue hover:bg-cyan-500 text-gray-900 font-bold py-3 px-6 rounded-lg 
+            transition-all duration-200 ease-in-out transform hover:scale-105 shadow-[0_0_10px_rgba(0,240,255,0.4)]
+            flex items-center justify-center text-base
           ">
-            <i class="fas fa-cogs mr-3 text-yellow-500"></i> Configurar Rango
-          </button>
-          <hr class="border-gray-200 my-1">
-          <button id="resetGameBtnControls" class="
-            w-full text-left px-4 py-3 text-base 
-            hover:bg-red-50 text-red-700 font-semibold transition-colors duration-150 ease-in-out
-            flex items-center
-          ">
-            <i class="fas fa-redo-alt mr-3"></i> Reiniciar Juego
+            <i class="fas fa-search mr-1 sm:mr-2"></i> <span class="hidden sm:inline">Buscar</span>
           </button>
         </div>
-      </div>
-    </div>
-  `
+      `
+    } else {
+      leftControls.innerHTML = `
+        <div class="flex flex-row flex-wrap gap-2 items-center justify-center lg:justify-start animate-fade-in w-full">
+          <button id="drawTombolaModeBtn" class="
+            bg-gradient-to-r from-neon-purple to-neon-pink hover:opacity-90 text-white font-black py-3 px-10 rounded-xl 
+            transition-all duration-300 ease-in-out transform hover:scale-105 shadow-[0_0_20px_rgba(176,38,255,0.6)]
+            flex items-center justify-center text-lg sm:text-xl uppercase tracking-widest w-full sm:w-auto
+          ">
+            <i class="fas fa-dice mr-3 text-2xl sm:text-3xl animate-bounce"></i> Girar Tómbola
+          </button>
+        </div>
+      `
+    }
+  }
 
-  const roomRef = doc(db, 'gameRooms', room.id) 
+  if (rightControls) {
+    if (rightControls.children.length === 0) {
+      rightControls.dataset.mode = currentMode
+      rightControls.innerHTML = `
+        <div class="relative flex-shrink-0 z-20"> 
+          <button id="dropdownToggleControls" class="
+            text-white text-xl bg-gray-800 hover:bg-gray-700 border border-gray-600 w-12 h-12 rounded-full 
+            focus:outline-none focus:border-neon-pink focus:ring-1 focus:ring-neon-pink
+            transition-all duration-200 ease-in-out transform hover:rotate-90 hover:scale-110 shadow-[0_0_10px_rgba(255,0,85,0.3)]
+            flex items-center justify-center
+          ">
+            <i class="fas fa-cog"></i> 
+          </button>
+          <div id="dropdownMenuControls" class="
+            absolute right-0 mt-3 w-56 bg-[#111827] text-white rounded-xl shadow-2xl 
+            overflow-hidden border border-gray-700
+            transform origin-top-right transition-all duration-300 ease-out
+            opacity-0 scale-95 pointer-events-none z-[100]
+          ">
+            <button id="toggleModeBtnControls" class="
+              w-full text-left px-5 py-4 text-sm font-semibold
+              hover:bg-gray-800 transition-colors duration-150 ease-in-out
+              flex items-center border-b border-gray-800
+            ">
+              <div class="w-8 h-8 rounded-full bg-neon-blue/20 flex items-center justify-center mr-3">
+                <i class="fas fa-exchange-alt text-neon-blue"></i>
+              </div>
+              ${currentMode === 'manual' ? 'Modo Tómbola' : 'Modo Manual'}
+            </button>
+            <button id="configMaxNumBtnControls" class="
+              w-full text-left px-5 py-4 text-sm font-semibold
+              hover:bg-gray-800 transition-colors duration-150 ease-in-out
+              flex items-center border-b border-gray-800
+            ">
+              <div class="w-8 h-8 rounded-full bg-neon-purple/20 flex items-center justify-center mr-3">
+                 <i class="fas fa-cogs text-neon-purple"></i>
+              </div>
+              Rango Bingo
+            </button>
+            <button id="winnersHistoryBtnControls" class="
+              w-full text-left px-5 py-4 text-sm font-semibold
+              hover:bg-gray-800 transition-colors duration-150 ease-in-out
+              flex items-center border-b border-gray-800
+            ">
+              <div class="w-8 h-8 rounded-full bg-neon-green/20 flex items-center justify-center mr-3">
+                 <i class="fas fa-trophy text-neon-green"></i>
+              </div>
+              Historial Ganadores
+            </button>
+            <button id="resetGameBtnControls" class="
+              w-full text-left px-5 py-4 text-sm font-semibold
+              hover:bg-red-900/30 text-neon-pink transition-colors duration-150 ease-in-out
+              flex items-center
+            ">
+              <div class="w-8 h-8 rounded-full bg-neon-pink/10 flex items-center justify-center mr-3">
+                <i class="fas fa-trash-alt text-neon-pink"></i>
+              </div>
+              Reiniciar Juego
+            </button>
+          </div>
+        </div>
+      `
+    } else if (rightControls.dataset.mode !== currentMode) {
+      rightControls.dataset.mode = currentMode
+      const toggleModeBtn = document.getElementById('toggleModeBtnControls')
+      if (toggleModeBtn) {
+        toggleModeBtn.innerHTML = `
+          <div class="w-8 h-8 rounded-full bg-neon-blue/20 flex items-center justify-center mr-3">
+            <i class="fas fa-exchange-alt text-neon-blue"></i>
+          </div>
+          ${currentMode === 'manual' ? 'Modo Tómbola' : 'Modo Manual'}
+        `
+      }
+    }
+  }
+
+  const roomRef = doc(db, 'gameRooms', room.id)
   const inputNumber = document.getElementById('inputNumber') as HTMLInputElement
   const enterButton = document.getElementById('enterNumberBtn') as HTMLButtonElement
   const searchInput = document.getElementById('searchNumber') as HTMLInputElement
   const searchButton = document.getElementById('searchNumberBtn') as HTMLButtonElement
+  const drawTombolaModeBtn = document.getElementById('drawTombolaModeBtn') as HTMLButtonElement
 
   async function ingresarNumero() {
     const number = parseInt(inputNumber.value)
     if (isNaN(number)) {
-      Swal.fire('Atención', 'Por favor, ingresa un número válido.', 'warning')
+      Swal.fire({ title: 'Atención', text: 'Ingresa un número válido.', icon: 'warning', background: '#111827', color: '#fff', confirmButtonColor: '#b026ff' })
       return
     }
 
@@ -103,50 +153,71 @@ export function renderBingoControls(room: GameRoom) {
     const latestData = snapshot.data() as GameRoom
 
     if (number < 1 || number > latestData.maxNumber) {
-      Swal.fire('Número fuera de rango', `El número debe estar entre 1 y ${latestData.maxNumber}.`, 'warning')
+      Swal.fire({ title: 'Fuera de rango', text: `Entre 1 y ${latestData.maxNumber}.`, icon: 'warning', background: '#111827', color: '#fff', confirmButtonColor: '#ff0055' })
       inputNumber.value = ''
       inputNumber.focus()
       return
     }
 
     if (latestData.drawnNumbers.includes(number)) {
-      Swal.fire('Número ya ingresado', 'Este número ya ha sido sorteado.', 'info')
+      Swal.fire({ title: 'Ya ingresado', text: 'El número ya fue sorteado.', icon: 'info', background: '#111827', color: '#fff' })
       inputNumber.value = ''
       inputNumber.focus()
       return
     }
 
     const updatedNumbers = [...latestData.drawnNumbers, number]
-    await updateDoc(roomRef, {
-      drawnNumbers: updatedNumbers
-    })
+    await updateDoc(roomRef, { drawnNumbers: updatedNumbers })
 
     inputNumber.value = ''
     inputNumber.focus()
   }
 
-  function buscarNumero() {
+  async function buscarNumero() {
     const number = parseInt(searchInput.value)
     if (isNaN(number)) {
-        Swal.fire('Atención', 'Por favor, ingresa un número válido para buscar.', 'warning')
-        return
+      Swal.fire({ title: 'Atención', text: 'Ingresa un número válido.', icon: 'warning', background: '#111827', color: '#fff' })
+      return
+    }
+
+    const snapshot = await getDoc(roomRef)
+    const latestData = snapshot.data() as GameRoom
+
+    if (number < 1 || number > latestData.maxNumber) {
+      Swal.fire({ title: 'Fuera de rango', text: `Solo se permiten números entre 1 y ${latestData.maxNumber}.`, icon: 'warning', background: '#111827', color: '#fff', confirmButtonColor: '#ff0055' })
+      searchInput.value = ''
+      searchInput.focus()
+      return
+    }
+
+    if (!latestData.drawnNumbers.includes(number)) {
+      Swal.fire({ title: 'No ha salido', text: `El número ${number} todavía no ha sido cantado.`, icon: 'info', background: '#111827', color: '#fff' })
+      searchInput.value = ''
+      searchInput.focus()
+      return
     }
 
     document.querySelectorAll('.highlight-search').forEach(el => {
-      el.classList.remove('highlight-search', 'ring', 'ring-yellow-300', 'scale-110')
+      el.classList.remove('highlight-search', 'ring-4', 'ring-neon-blue', 'scale-125', 'z-30')
     })
 
     setTimeout(() => {
-      const cell = document.querySelector<HTMLDivElement>(`#bingoBoard .grid > div:nth-child(${number})`)
+      const cells = Array.from(document.querySelectorAll<HTMLDivElement>('#bingoBoard .grid > div'));
+      const cell = cells.find(c => parseInt(c.textContent || '0') === number);
       if (cell) {
-        cell.classList.add('highlight-search', 'ring', 'ring-yellow-300', 'ring-offset-2', 'ring-offset-gray-900', 'scale-110', 'z-20')
+        cell.classList.add('scale-110', 'shadow-[0_0_30px_rgba(0,240,255,0.8)]', 'z-40')
+
+        const snakeContainer = document.createElement('div')
+        snakeContainer.className = 'snake-container'
+        snakeContainer.innerHTML = '<span></span><span></span><span></span><span></span>'
+        cell.appendChild(snakeContainer)
+
         cell.scrollIntoView({ behavior: 'smooth', block: 'center' })
 
         setTimeout(() => {
-          cell.classList.remove('highlight-search', 'ring', 'ring-yellow-300', 'ring-offset-2', 'ring-offset-gray-900', 'scale-110', 'z-20')
-        }, 2000)
-      } else {
-        Swal.fire('Número no encontrado', `El número ${number} no existe en el tablero.`, 'info')
+          cell.classList.remove('scale-110', 'shadow-[0_0_30px_rgba(0,240,255,0.8)]', 'z-40')
+          snakeContainer.remove()
+        }, 3000)
       }
     }, 50)
 
@@ -154,19 +225,102 @@ export function renderBingoControls(room: GameRoom) {
     searchInput.focus()
   }
 
-  enterButton.addEventListener('click', ingresarNumero)
-  inputNumber.addEventListener('keydown', (e) => {
-    if (e.key === 'Enter') {
-      e.preventDefault()
-      ingresarNumero()
-    }
-  })
+  function restrictInputRealTime(e: Event) {
+    const target = e.target as HTMLInputElement;
 
-  searchButton.addEventListener('click', buscarNumero)
-  searchInput.addEventListener('keydown', (e) => {
-    if (e.key === 'Enter') {
-      e.preventDefault()
-      buscarNumero()
+    if (/[^0-9]/.test(target.value)) {
+      target.value = target.value.replace(/[^0-9]/g, '');
     }
-  })
+
+    if (target.value !== '') {
+      let val = parseInt(target.value);
+      if (val > room.maxNumber) {
+        target.value = target.value.slice(0, -1);
+        if (parseInt(target.value) > room.maxNumber) {
+          target.value = room.maxNumber.toString();
+        }
+      } else if (val < 1 && target.value.length > 1) {
+        target.value = target.value.slice(0, -1);
+      } else if (val === 0) {
+        target.value = '';
+      }
+    }
+  }
+
+  function preventInvalidChars(e: KeyboardEvent) {
+    if (e.key.length === 1 && !/^[0-9]$/.test(e.key)) {
+      if (!e.ctrlKey && !e.metaKey) {
+        e.preventDefault();
+      }
+    }
+  }
+
+  if (inputNumber && searchInput && enterButton && searchButton && !inputNumber.dataset.listeners) {
+    inputNumber.dataset.listeners = 'true'
+    inputNumber.addEventListener('input', restrictInputRealTime)
+    searchInput.addEventListener('input', restrictInputRealTime)
+
+    inputNumber.addEventListener('keydown', preventInvalidChars)
+    searchInput.addEventListener('keydown', preventInvalidChars)
+
+    enterButton.addEventListener('click', ingresarNumero)
+    inputNumber.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') { e.preventDefault(); ingresarNumero() }
+    })
+
+    searchButton.addEventListener('click', buscarNumero)
+    searchInput.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') { e.preventDefault(); buscarNumero() }
+    })
+  }
+
+  if (drawTombolaModeBtn && !drawTombolaModeBtn.dataset.listeners) {
+    drawTombolaModeBtn.dataset.listeners = 'true'
+    drawTombolaModeBtn.addEventListener('click', async () => {
+      if (drawTombolaModeBtn.disabled) return;
+      drawTombolaModeBtn.disabled = true;
+
+      const localRemaining = Array.from({ length: room.maxNumber }, (_, i) => i + 1)
+        .filter(n => !room.drawnNumbers.includes(n));
+
+      if (localRemaining.length === 0) {
+        Swal.fire({ title: 'Bingo Completo', text: 'No quedan números por sacar.', icon: 'info', background: '#111827', color: '#fff' });
+        drawTombolaModeBtn.disabled = false;
+        return;
+      }
+
+      const snapshot = await getDoc(roomRef)
+      const latestData = snapshot.data() as GameRoom
+
+      if (latestData.tombolaActive) {
+        drawTombolaModeBtn.disabled = false;
+        return;
+      }
+
+      const remaining = Array.from({ length: latestData.maxNumber }, (_, i) => i + 1)
+        .filter(n => !latestData.drawnNumbers.includes(n))
+
+      if (remaining.length === 0) {
+        Swal.fire({ title: 'Bingo Completo', text: 'No quedan números por sacar.', icon: 'info', background: '#111827', color: '#fff' })
+        drawTombolaModeBtn.disabled = false;
+        return
+      }
+
+      const random = remaining[Math.floor(Math.random() * remaining.length)]
+
+      await updateDoc(roomRef, { tombolaActive: true, tombolaTarget: random })
+
+      setTimeout(async () => {
+        const snap = await getDoc(roomRef)
+        const updated = snap.data() as GameRoom
+        const updatedNumbers = [...updated.drawnNumbers, random]
+        await updateDoc(roomRef, {
+          drawnNumbers: updatedNumbers,
+          tombolaActive: false,
+          tombolaTarget: null
+        })
+        drawTombolaModeBtn.disabled = false
+      }, 3000)
+    })
+  }
 }

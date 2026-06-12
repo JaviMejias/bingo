@@ -1,67 +1,49 @@
 import type { GameRoom } from '../types/game'
 import { doc, getDoc, updateDoc } from 'firebase/firestore'
 import { db } from '../services/firebase'
-import Swal from 'sweetalert2'
 
-export function renderBingoBoard(room: GameRoom) {
+export function renderBingoBoard(room: GameRoom, isHost: boolean) {
   const bingoBoardContainer = document.getElementById('bingoBoard')
   if (!bingoBoardContainer) {
-    console.warn('Contenedor del tablero de bingo no encontrado. Asegúrate de que existe un div con id="bingoBoard" en tu HTML.');
     return;
   }
 
-  const isHost = document.getElementById('controls') !== null;
+  const currentCellsCount = bingoBoardContainer.querySelectorAll('.grid > div').length;
 
-  if (bingoBoardContainer.dataset.rendered === 'true') {
+  if (bingoBoardContainer.dataset.rendered === 'true' && currentCellsCount === room.maxNumber) {
     updateBoardNumbers(bingoBoardContainer, room.drawnNumbers, isHost);
     return;
   }
 
-  const gridWrapperClasses = `
-    grid gap-0.5 sm:gap-1 p-1 rounded-lg shadow-xl overflow-hidden
-    ${isHost ? 'bg-gray-800' : 'bg-gray-700'}
-    w-full max-w-full
-  `
+  let cols = Math.floor(room.maxNumber / 10) + 1;
 
-  let cols = 10
-  if (room.maxNumber > 100) {
-    cols = 15
-  }
-
-  let numberTextSize = ''
-
-  if (isHost) {
-    numberTextSize = `
-      text-xs sm:text-sm lg:text-base font-bold // Ajustado para ser pequeño y legible
-    `
-  } else {
-    numberTextSize = `
-      text-sm sm:text-base md:text-lg lg:text-xl font-semibold
-    `
-  }
-
-  let boardHtml = `<div class="${gridWrapperClasses} grid-cols-${cols} sm:grid-cols-${cols} md:grid-cols-${cols} lg:grid-cols-${cols} xl:grid-cols-${cols}">`;
+  let boardHtml = `<div class="w-full h-full grid gap-1 sm:gap-2 p-1" style="container-type: size; grid-template-columns: repeat(${cols}, minmax(0, 1fr)); grid-template-rows: repeat(10, minmax(0, 1fr));">`;
 
   for (let i = 1; i <= room.maxNumber; i++) {
     const isDrawn = room.drawnNumbers.includes(i);
     const lastDrawn = room.drawnNumbers[room.drawnNumbers.length - 1];
+    const col = Math.floor(i / 10) + 1;
+    const row = (i % 10 === 0) ? 1 : (i % 10) + 1;
 
     let cellClasses = `
-      flex items-center justify-center p-0.5
-      rounded-md transition-all duration-300 ease-in-out border border-gray-600 cursor-pointer
-      ${numberTextSize} aspect-square
+      relative flex items-center justify-center rounded-lg transition-all duration-300 ease-out cursor-pointer font-black border-2
     `
 
     if (isDrawn) {
-      cellClasses += ` bg-emerald-600 text-white shadow-md transform scale-105 `
+      cellClasses += ` bg-gradient-to-br from-neon-purple to-neon-pink border-transparent text-white shadow-[0_0_10px_rgba(176,38,255,0.6)] transform scale-[1.03] z-10 `
       if (i === lastDrawn && isHost) {
-        cellClasses += ` animate-pulse ring-4 ring-yellow-400 border-yellow-400 `
+        cellClasses += ` ring-4 ring-neon-blue animate-pulse `
       }
     } else {
-      cellClasses += ` bg-gray-600 text-gray-200 hover:bg-gray-500 `
+      cellClasses += ` bg-gray-800/50 border-gray-700 text-gray-400 hover:bg-gray-700 hover:border-gray-500 hover:text-white `
     }
 
-    boardHtml += `<div class="${cellClasses}">${i}</div>`
+    boardHtml += `
+      <div class="${cellClasses} group overflow-hidden" style="grid-column: ${col}; grid-row: ${row}; font-size: clamp(10px, 5cqmin, 3.5rem);">
+        <span class="relative z-10 drop-shadow-md">${i}</span>
+        ${isDrawn ? '<div class="absolute inset-0 bg-white/20 blur-sm pointer-events-none"></div>' : ''}
+      </div>
+    `
   }
 
   boardHtml += `</div>`
@@ -71,8 +53,13 @@ export function renderBingoBoard(room: GameRoom) {
   if (isHost) {
     bingoBoardContainer.querySelectorAll('.grid > div').forEach(cell => {
       cell.addEventListener('click', async (e) => {
-        const clickedNumber = parseInt((e.target as HTMLDivElement).textContent || '0')
+        const target = e.currentTarget as HTMLDivElement
+        const clickedNumber = parseInt(target.textContent || '0')
         if (clickedNumber > 0 && clickedNumber <= room.maxNumber) {
+
+          target.classList.add('animate-pop')
+          setTimeout(() => target.classList.remove('animate-pop'), 300)
+
           const roomRef = doc(db, 'gameRooms', room.id)
           const snapshot = await getDoc(roomRef)
           const latestData = snapshot.data() as GameRoom
@@ -80,38 +67,13 @@ export function renderBingoBoard(room: GameRoom) {
           let updatedNumbers = [...latestData.drawnNumbers]
           const index = updatedNumbers.indexOf(clickedNumber)
 
-          let confirmed: { isConfirmed: boolean } = { isConfirmed: false }
-
           if (index > -1) {
-            confirmed = await Swal.fire({
-              title: 'Desmarcar número',
-              text: `¿Quieres desmarcar el número ${clickedNumber}?`,
-              icon: 'question',
-              showCancelButton: true,
-              confirmButtonText: 'Sí, desmarcar',
-              cancelButtonText: 'Cancelar'
-            })
-            if (confirmed.isConfirmed) {
-              updatedNumbers.splice(index, 1)
-            }
+            updatedNumbers.splice(index, 1)
           } else {
-            confirmed = await Swal.fire({
-              title: 'Marcar número',
-              text: `¿Quieres marcar el número ${clickedNumber}?`,
-              icon: 'question',
-              showCancelButton: true,
-              confirmButtonText: 'Sí, marcar',
-              cancelButtonText: 'Cancelar'
-            })
-            if (confirmed.isConfirmed) {
-              updatedNumbers.push(clickedNumber)
-              updatedNumbers.sort((a, b) => a - b)
-            }
+            updatedNumbers.push(clickedNumber)
           }
 
-          if (confirmed.isConfirmed) {
-            await updateDoc(roomRef, { drawnNumbers: updatedNumbers })
-          }
+          await updateDoc(roomRef, { drawnNumbers: updatedNumbers })
         }
       })
     })
@@ -126,19 +88,25 @@ function updateBoardNumbers(container: HTMLElement, drawnNumbers: number[], isHo
     const number = parseInt(cell.textContent || '0')
     const isDrawn = drawnNumbers.includes(number)
 
-    cell.classList.remove(
-      'bg-emerald-600', 'text-white', 'shadow-md', 'transform', 'scale-105',
-      'bg-gray-600', 'text-gray-200', 'hover:bg-gray-500',
-      'animate-pulse', 'ring-4', 'ring-yellow-400', 'border-yellow-400'
-    )
+    cell.className = cell.className.replace(/bg-gradient-to-br.*z-10|bg-gray-800\/50.*text-white|ring-4 ring-neon-blue animate-pulse/g, '').trim()
 
     if (isDrawn) {
-      cell.classList.add('bg-emerald-600', 'text-white', 'shadow-md', 'transform', 'scale-105')
+      cell.classList.add('bg-gradient-to-br', 'from-neon-purple', 'to-neon-pink', 'border-transparent', 'text-white', 'shadow-[0_0_10px_rgba(176,38,255,0.6)]', 'transform', 'scale-[1.03]', 'z-10')
       if (number === lastDrawn && isHost) {
-        cell.classList.add('animate-pulse', 'ring-4', 'ring-yellow-400', 'border-yellow-400')
+        cell.classList.add('ring-4', 'ring-neon-blue', 'animate-pulse')
+      }
+
+      const span = cell.querySelector('span')
+      if (span && !cell.querySelector('.bg-white\\/20')) {
+        const overlay = document.createElement('div')
+        overlay.className = 'absolute inset-0 bg-white/20 blur-sm pointer-events-none'
+        cell.appendChild(overlay)
       }
     } else {
-      cell.classList.add('bg-gray-600', 'text-gray-200', 'hover:bg-gray-500')
+      cell.classList.add('bg-gray-800/50', 'border-gray-700', 'text-gray-400', 'hover:bg-gray-700', 'hover:border-gray-500', 'hover:text-white')
+      cell.classList.remove('transform', 'scale-[1.03]', 'z-10')
+      const overlay = cell.querySelector('.bg-white\\/20')
+      if (overlay) overlay.remove()
     }
   })
 }
