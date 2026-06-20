@@ -331,6 +331,21 @@ export async function renderGameRoom(code: string, role: 'host' | 'player') {
   let initialLoad = true;
   let processedWinners = new Set<string>();
 
+  // Initial render
+  renderBingoBoard(roomData, role === 'host');
+  renderLastNumbers(
+    roomData,
+    document.getElementById('currentLastNumber') as HTMLDivElement,
+    document.getElementById('previousLastNumber') as HTMLDivElement
+  );
+  if (role === 'host') {
+    renderBingoControls(roomData);
+    if (!app.dataset.hostControlsListenersSetup) {
+      setupHostControlsListeners(roomData);
+      app.dataset.hostControlsListenersSetup = 'true';
+    }
+  }
+
   socket.on('roomDeleted', () => {
     Swal.fire({ title: 'Sala eliminada', text: 'El host ha cerrado la sala.', icon: 'info', background: '#111827', color: '#fff' })
     window.location.hash = '#/'
