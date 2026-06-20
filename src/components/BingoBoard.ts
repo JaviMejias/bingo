@@ -59,7 +59,12 @@ export function renderBingoBoard(room: GameRoom, isHost: boolean) {
           target.classList.add('animate-pop')
           setTimeout(() => target.classList.remove('animate-pop'), 300)
 
-          const latestData = room
+          const currentRoom = await new Promise<GameRoom>((resolve) => {
+            socket.emit('joinRoomById', room.id, (response: any) => {
+              resolve(response.room)
+            })
+          })
+          const latestData = currentRoom || room
 
           let updatedNumbers = [...latestData.drawnNumbers]
           const index = updatedNumbers.indexOf(clickedNumber)
