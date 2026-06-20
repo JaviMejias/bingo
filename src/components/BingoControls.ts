@@ -286,16 +286,21 @@ export function renderBingoControls(room: GameRoom) {
       if (drawTombolaModeBtn.disabled) return;
       drawTombolaModeBtn.disabled = true;
 
-      const localRemaining = Array.from({ length: room.maxNumber }, (_, i) => i + 1)
-        .filter(n => !room.drawnNumbers.includes(n));
+      const currentRoom = await new Promise<GameRoom>((resolve) => {
+        socket.emit('joinRoomById', room.id, (response: any) => {
+          resolve(response.room)
+        })
+      })
+      const latestData = currentRoom || room
+
+      const localRemaining = Array.from({ length: latestData.maxNumber }, (_, i) => i + 1)
+        .filter(n => !latestData.drawnNumbers.includes(n));
 
       if (localRemaining.length === 0) {
         Swal.fire({ title: 'Bingo Completo', text: 'No quedan números por sacar.', icon: 'info', background: '#111827', color: '#fff' });
         drawTombolaModeBtn.disabled = false;
         return;
       }
-
-      const latestData = room
 
       if (latestData.tombolaActive) {
         drawTombolaModeBtn.disabled = false;

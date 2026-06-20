@@ -619,6 +619,14 @@ async function setupHostControlsListeners(roomData: GameRoom) {
   const toggleModeBtnControls = document.getElementById('toggleModeBtnControls') as HTMLButtonElement
   const winnersHistoryBtn = document.getElementById('winnersHistoryBtnControls') as HTMLButtonElement
 
+  const getLatestRoom = async () => {
+    return new Promise<GameRoom>((resolve) => {
+      socket.emit('joinRoomById', roomData.id, (response: any) => {
+        resolve(response.room || roomData)
+      })
+    })
+  }
+
   if (!dropdownToggle || !dropdownMenu || !resetButton || !configButton) return
 
   dropdownToggle.addEventListener('click', (e) => {
@@ -640,7 +648,8 @@ async function setupHostControlsListeners(roomData: GameRoom) {
 
   resetButton.addEventListener('click', async () => {
     closeDropdownMenu()
-    if (roomData.drawnNumbers.length === 0) return
+    const room = await getLatestRoom()
+    if (room.drawnNumbers.length === 0) return
 
     const confirmed = await Swal.fire({
       title: '¿Reiniciar el juego?',
@@ -657,7 +666,7 @@ async function setupHostControlsListeners(roomData: GameRoom) {
 
   configButton.addEventListener('click', async () => {
     closeDropdownMenu()
-    const room = roomData
+    const room = await getLatestRoom()
 
     const { isConfirmed } = await Swal.fire({
       title: '¿Cambiar rango de Bingo?',
@@ -693,7 +702,7 @@ async function setupHostControlsListeners(roomData: GameRoom) {
   if (winnersHistoryBtn) {
     winnersHistoryBtn.addEventListener('click', async () => {
       closeDropdownMenu()
-      const room = roomData
+      const room = await getLatestRoom()
 
       const winners = room.winnersHistory || []
       if (winners.length === 0) {
@@ -769,9 +778,9 @@ async function setupHostControlsListeners(roomData: GameRoom) {
   if (toggleModeBtnControls) {
     toggleModeBtnControls.addEventListener('click', async () => {
       closeDropdownMenu()
-      const room = roomData
+      const room = await getLatestRoom()
       const newMode = room.currentMode === 'manual' ? 'tombola' : 'manual'
-      socket.emit('updateRoom', roomData.id, { currentMode: newMode })
+      socket.emit('updateRoom', room.id, { currentMode: newMode })
     })
   }
 }
