@@ -152,7 +152,20 @@ export async function renderGameRoom(code: string, role: 'host' | 'player') {
   if (roomCodeElement) {
     roomCodeElement.addEventListener('click', async () => {
       try {
-        await navigator.clipboard.writeText(code)
+        if (navigator.clipboard && navigator.clipboard.writeText) {
+          await navigator.clipboard.writeText(code)
+        } else {
+          const textArea = document.createElement("textarea");
+          textArea.value = code;
+          textArea.style.position = "fixed";
+          textArea.style.left = "-999999px";
+          textArea.style.top = "-999999px";
+          document.body.appendChild(textArea);
+          textArea.focus();
+          textArea.select();
+          document.execCommand('copy');
+          textArea.remove();
+        }
         Swal.fire({
           toast: true, position: 'top-end', icon: 'success', title: 'Código copiado',
           showConfirmButton: false, timer: 1500, background: '#111827', color: '#fff'

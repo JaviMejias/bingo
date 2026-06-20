@@ -147,7 +147,12 @@ export function renderBingoControls(room: GameRoom) {
       return
     }
 
-    const latestData = room
+    const currentRoom = await new Promise<GameRoom>((resolve) => {
+      socket.emit('joinRoomById', room.id, (response: any) => {
+        resolve(response.room)
+      })
+    })
+    const latestData = currentRoom || room
 
     if (number < 1 || number > latestData.maxNumber) {
       Swal.fire({ title: 'Fuera de rango', text: `Entre 1 y ${latestData.maxNumber}.`, icon: 'warning', background: '#111827', color: '#fff', confirmButtonColor: '#ff0055' })
@@ -177,7 +182,12 @@ export function renderBingoControls(room: GameRoom) {
       return
     }
 
-    const latestData = room
+    const currentRoom = await new Promise<GameRoom>((resolve) => {
+      socket.emit('joinRoomById', room.id, (response: any) => {
+        resolve(response.room)
+      })
+    })
+    const latestData = currentRoom || room
 
     if (number < 1 || number > latestData.maxNumber) {
       Swal.fire({ title: 'Fuera de rango', text: `Solo se permiten números entre 1 y ${latestData.maxNumber}.`, icon: 'warning', background: '#111827', color: '#fff', confirmButtonColor: '#ff0055' })
