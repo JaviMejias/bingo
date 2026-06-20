@@ -1,5 +1,4 @@
-import { db, authReady } from './firebase'
-import { collection, doc, setDoc } from 'firebase/firestore'
+import { authReady, socket } from './socket'
 import type { GameRoom } from '../types/game'
 
 function generateCode(length = 6): string {
@@ -16,19 +15,28 @@ export async function createGameRoom(maxNumber = 75, mode: 'manual' | 'tombola' 
   }
 
   const code = generateCode()
-  const roomRef = doc(collection(db, 'gameRooms'))
+  const roomId = Math.random().toString(36).substring(2, 15)
   const roomData: GameRoom = {
-    id: roomRef.id,
+    id: roomId,
     code,
     hostId: user.uid,
     createdAt: Date.now(),
     maxNumber,
     drawnNumbers: [],
     currentMode: mode,
+    tombolaActive: false,
+    tombolaTarget: null,
     bingoCallers: [],
     winnersHistory: []
   }
 
-  await setDoc(roomRef, roomData)
-  return roomData
+  return new Promise((resolve, reject) => {
+    socket.emit('createRoom', roomData, (response: any) => {
+      if (response && response.success) {
+        resolve(response.room)
+      } else {
+        reject(new Error(response?.error || 'Failed to create room'))
+      }
+    })
+  })
 }

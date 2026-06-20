@@ -1,0 +1,20 @@
+version: '3.8'
+
+services:
+  bingo_backend:
+    build: ./backend
+    container_name: bingo_backend
+    ports:
+      - "4001:4001"
+    environment:
+      - PORT=4001
+    restart: unless-stopped
+
+  bingo_frontend:
+    build: .
+    container_name: bingo_frontend
+    ports:
+      - "8081:80"
+    restart: unless-stopped
+    depends_on:
+      - bingo_backend

@@ -1,18 +1,16 @@
-import { collection, query, where, getDocs } from 'firebase/firestore'
-import { db } from '../services/firebase'
+import { socket } from '../services/socket'
 import Swal from 'sweetalert2'
 
-async function findRoomByCode(code: string) {
-  const roomsRef = collection(db, 'gameRooms')
-  const q = query(roomsRef, where('code', '==', code))
-  const snapshot = await getDocs(q)
-
-  if (!snapshot.empty) {
-    const doc = snapshot.docs[0]
-    return { id: doc.id, ...doc.data() }
-  }
-
-  return null
+async function findRoomByCode(code: string): Promise<any> {
+  return new Promise((resolve) => {
+    socket.emit('joinRoom', code, (response: any) => {
+      if (response && response.success) {
+        resolve(response.room)
+      } else {
+        resolve(null)
+      }
+    })
+  })
 }
 
 export function renderJoinGame() {

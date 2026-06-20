@@ -1,7 +1,6 @@
 import Swal from 'sweetalert2'
 import type { GameRoom } from '../types/game'
-import { updateDoc, doc, getDoc } from 'firebase/firestore'
-import { db } from '../services/firebase'
+import { socket } from '../services/socket'
 
 export function renderBingoControls(room: GameRoom) {
   const leftControls = document.getElementById('controls-left')
@@ -135,7 +134,6 @@ export function renderBingoControls(room: GameRoom) {
     }
   }
 
-  const roomRef = doc(db, 'gameRooms', room.id)
   const inputNumber = document.getElementById('inputNumber') as HTMLInputElement
   const enterButton = document.getElementById('enterNumberBtn') as HTMLButtonElement
   const searchInput = document.getElementById('searchNumber') as HTMLInputElement
@@ -149,8 +147,7 @@ export function renderBingoControls(room: GameRoom) {
       return
     }
 
-    const snapshot = await getDoc(roomRef)
-    const latestData = snapshot.data() as GameRoom
+    const latestData = room
 
     if (number < 1 || number > latestData.maxNumber) {
       Swal.fire({ title: 'Fuera de rango', text: `Entre 1 y ${latestData.maxNumber}.`, icon: 'warning', background: '#111827', color: '#fff', confirmButtonColor: '#ff0055' })
@@ -167,7 +164,7 @@ export function renderBingoControls(room: GameRoom) {
     }
 
     const updatedNumbers = [...latestData.drawnNumbers, number]
-    await updateDoc(roomRef, { drawnNumbers: updatedNumbers })
+    socket.emit('updateRoom', room.id, { drawnNumbers: updatedNumbers })
 
     inputNumber.value = ''
     inputNumber.focus()
@@ -180,8 +177,7 @@ export function renderBingoControls(room: GameRoom) {
       return
     }
 
-    const snapshot = await getDoc(roomRef)
-    const latestData = snapshot.data() as GameRoom
+    const latestData = room
 
     if (number < 1 || number > latestData.maxNumber) {
       Swal.fire({ title: 'Fuera de rango', text: `Solo se permiten números entre 1 y ${latestData.maxNumber}.`, icon: 'warning', background: '#111827', color: '#fff', confirmButtonColor: '#ff0055' })
@@ -289,8 +285,7 @@ export function renderBingoControls(room: GameRoom) {
         return;
       }
 
-      const snapshot = await getDoc(roomRef)
-      const latestData = snapshot.data() as GameRoom
+      const latestData = room
 
       if (latestData.tombolaActive) {
         drawTombolaModeBtn.disabled = false;
@@ -308,13 +303,11 @@ export function renderBingoControls(room: GameRoom) {
 
       const random = remaining[Math.floor(Math.random() * remaining.length)]
 
-      await updateDoc(roomRef, { tombolaActive: true, tombolaTarget: random })
+      socket.emit('updateRoom', room.id, { tombolaActive: true, tombolaTarget: random })
 
-      setTimeout(async () => {
-        const snap = await getDoc(roomRef)
-        const updated = snap.data() as GameRoom
-        const updatedNumbers = [...updated.drawnNumbers, random]
-        await updateDoc(roomRef, {
+      setTimeout(() => {
+        const updatedNumbers = [...latestData.drawnNumbers, random]
+        socket.emit('updateRoom', room.id, {
           drawnNumbers: updatedNumbers,
           tombolaActive: false,
           tombolaTarget: null

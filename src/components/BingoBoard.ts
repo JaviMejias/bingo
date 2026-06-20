@@ -1,6 +1,5 @@
 import type { GameRoom } from '../types/game'
-import { doc, getDoc, updateDoc } from 'firebase/firestore'
-import { db } from '../services/firebase'
+import { socket } from '../services/socket'
 
 export function renderBingoBoard(room: GameRoom, isHost: boolean) {
   const bingoBoardContainer = document.getElementById('bingoBoard')
@@ -60,9 +59,7 @@ export function renderBingoBoard(room: GameRoom, isHost: boolean) {
           target.classList.add('animate-pop')
           setTimeout(() => target.classList.remove('animate-pop'), 300)
 
-          const roomRef = doc(db, 'gameRooms', room.id)
-          const snapshot = await getDoc(roomRef)
-          const latestData = snapshot.data() as GameRoom
+          const latestData = room
 
           let updatedNumbers = [...latestData.drawnNumbers]
           const index = updatedNumbers.indexOf(clickedNumber)
@@ -73,7 +70,7 @@ export function renderBingoBoard(room: GameRoom, isHost: boolean) {
             updatedNumbers.push(clickedNumber)
           }
 
-          await updateDoc(roomRef, { drawnNumbers: updatedNumbers })
+          socket.emit('updateRoom', room.id, { drawnNumbers: updatedNumbers })
         }
       })
     })

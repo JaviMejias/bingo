@@ -1,5 +1,4 @@
-import { doc, onSnapshot, collection, query, where, getDocs, getDoc, updateDoc, arrayUnion, arrayRemove } from 'firebase/firestore'
-import { db, authReady } from '../services/firebase'
+import { socket, authReady } from '../services/socket'
 import Swal from 'sweetalert2'
 import type { GameRoom } from '../types/game'
 import { renderBingoControls } from '../components/BingoControls'
@@ -8,14 +7,15 @@ import { renderLastNumbers } from '../components/LastNumbers'
 import confetti from 'canvas-confetti'
 
 async function findRoomByCode(code: string): Promise<{ id: string, data: GameRoom } | null> {
-  const q = query(collection(db, 'gameRooms'), where('code', '==', code))
-  const querySnapshot = await getDocs(q)
-  if (querySnapshot.empty) return null
-  const docSnap = querySnapshot.docs[0]
-  return {
-    id: docSnap.id,
-    data: docSnap.data() as GameRoom
-  }
+  return new Promise((resolve) => {
+    socket.emit('joinRoom', code, (response: any) => {
+      if (response && response.success) {
+        resolve({ id: response.room.id, data: response.room })
+      } else {
+        resolve(null)
+      }
+    })
+  })
 }
 
 export async function renderGameRoom(code: string, role: 'host' | 'player') {
@@ -48,7 +48,7 @@ export async function renderGameRoom(code: string, role: 'host' | 'player') {
 
   let playerName = ''
   if (role === 'player') {
-    playerName = sessionStorage.getItem(`bingo_player_name_${roomResult.id}`) || ''
+    playerName = sessionStorage.getItem(`bingo_player_name_${roomData.id}`) || ''
     if (!playerName) {
       const { value: name } = await Swal.fire({
         title: 'Ingresa tu nombre',
@@ -66,7 +66,7 @@ export async function renderGameRoom(code: string, role: 'host' | 'player') {
       })
       if (name) {
         playerName = name
-        sessionStorage.setItem(`bingo_player_name_${roomResult.id}`, name)
+        sessionStorage.setItem(`bingo_player_name_${roomData.id}`, name)
       } else {
         window.location.hash = '#/'
         return
@@ -180,10 +180,7 @@ export async function renderGameRoom(code: string, role: 'host' | 'player') {
       })
 
       if (result.isConfirmed) {
-        const roomRef = doc(db, 'gameRooms', roomResult.id)
-        await updateDoc(roomRef, {
-          bingoCallers: arrayUnion(playerName)
-        })
+        socket.emit('addBingoCaller', roomData.id, playerName)
         Swal.fire({
           toast: true,
           position: 'bottom-end',
@@ -198,7 +195,6 @@ export async function renderGameRoom(code: string, role: 'host' | 'player') {
     })
   }
 
-  const roomDocRef = doc(db, 'gameRooms', roomResult.id)
   let localInRevision = new Set<string>();
   let localValidated = new Map<string, string>(); // name -> 'binguito' | 'carton'
   let currentBingoCallers: string[] = [];
@@ -291,10 +287,10 @@ export async function renderGameRoom(code: string, role: 'host' | 'player') {
 
       if (type === 'falsa') {
         if (card) card.classList.add('animate-lose');
-        setTimeout(async () => {
+        setTimeout(() => {
           localInRevision.delete(name);
           localValidated.delete(name);
-          await updateDoc(roomDocRef, { bingoCallers: arrayRemove(name) });
+          socket.emit('removeBingoCaller', roomData.id, name);
         }, 500);
         return;
       }
@@ -309,11 +305,7 @@ export async function renderGameRoom(code: string, role: 'host' | 'player') {
         } else {
           // Second click: Confirm and Save
           if (card) card.classList.add('animate-win');
-          setTimeout(async () => {
-            const snapshot = await getDoc(roomDocRef);
-            const room = snapshot.data() as GameRoom;
-            if (!room.bingoCallers || !room.bingoCallers.includes(name)) return;
-
+          setTimeout(() => {
             const winType = type === 'binguito' ? 'Binguito' : 'Cartón Lleno';
             const newWinner = {
               id: Math.random().toString(36).substr(2, 9),
@@ -325,10 +317,7 @@ export async function renderGameRoom(code: string, role: 'host' | 'player') {
             localInRevision.clear();
             localValidated.clear();
             
-            await updateDoc(roomDocRef, {
-              winnersHistory: [...(room.winnersHistory || []), newWinner],
-              bingoCallers: []
-            });
+            socket.emit('addWinner', roomData.id, newWinner);
             Swal.fire({ toast: true, position: 'top-end', title: `${name} guardado en historial`, icon: 'success', background: '#111827', color: '#fff', showConfirmButton: false, timer: 3000 });
           }, 500);
         }
@@ -342,14 +331,12 @@ export async function renderGameRoom(code: string, role: 'host' | 'player') {
   let initialLoad = true;
   let processedWinners = new Set<string>();
 
-  onSnapshot(roomDocRef, (docSnap) => {
-    if (!docSnap.exists()) {
-      Swal.fire({ title: 'Sala eliminada', text: 'El host ha cerrado la sala.', icon: 'info', background: '#111827', color: '#fff' })
-      window.location.hash = '#/'
-      return
-    }
+  socket.on('roomDeleted', () => {
+    Swal.fire({ title: 'Sala eliminada', text: 'El host ha cerrado la sala.', icon: 'info', background: '#111827', color: '#fff' })
+    window.location.hash = '#/'
+  });
 
-    const updatedRoom = docSnap.data() as GameRoom
+  socket.on('roomUpdated', (updatedRoom: GameRoom) => {
     
     if (updatedRoom.winnersHistory && updatedRoom.winnersHistory.length > 0) {
       updatedRoom.winnersHistory.forEach(w => {
@@ -498,7 +485,7 @@ export async function renderGameRoom(code: string, role: 'host' | 'player') {
           if (role === 'host') {
             renderBingoControls(updatedRoom);
             if (!app.dataset.hostControlsListenersSetup) {
-              setupHostControlsListeners(roomResult.id);
+              setupHostControlsListeners(roomData);
               app.dataset.hostControlsListenersSetup = 'true';
             }
           }
@@ -518,7 +505,7 @@ export async function renderGameRoom(code: string, role: 'host' | 'player') {
       renderBingoControls(updatedRoom)
 
       if (!app.dataset.hostControlsListenersSetup) {
-        setupHostControlsListeners(roomResult.id)
+        setupHostControlsListeners(roomData)
         app.dataset.hostControlsListenersSetup = 'true'
       }
     }
@@ -595,8 +582,8 @@ function closeDropdownMenu() {
   }
 }
 
-async function setupHostControlsListeners(roomId: string) {
-  const roomRef = doc(db, 'gameRooms', roomId)
+async function setupHostControlsListeners(roomData: GameRoom) {
+  
   const dropdownToggle = document.getElementById('dropdownToggleControls') as HTMLButtonElement
   const dropdownMenu = document.getElementById('dropdownMenuControls') as HTMLDivElement
   const resetButton = document.getElementById('resetGameBtnControls') as HTMLButtonElement
@@ -625,10 +612,7 @@ async function setupHostControlsListeners(roomId: string) {
 
   resetButton.addEventListener('click', async () => {
     closeDropdownMenu()
-    const snapshot = await getDoc(roomRef)
-    const room = snapshot.data() as GameRoom
-
-    if (room.drawnNumbers.length === 0) return
+    if (roomData.drawnNumbers.length === 0) return
 
     const confirmed = await Swal.fire({
       title: '¿Reiniciar el juego?',
@@ -639,14 +623,13 @@ async function setupHostControlsListeners(roomId: string) {
     })
 
     if (confirmed.isConfirmed) {
-      await updateDoc(roomRef, { drawnNumbers: [] })
+      socket.emit('updateRoom', roomData.id, { drawnNumbers: [] })
     }
   })
 
   configButton.addEventListener('click', async () => {
     closeDropdownMenu()
-    const snapshot = await getDoc(roomRef)
-    const room = snapshot.data() as GameRoom
+    const room = roomData
 
     const { isConfirmed } = await Swal.fire({
       title: '¿Cambiar rango de Bingo?',
@@ -675,15 +658,14 @@ async function setupHostControlsListeners(roomId: string) {
     })
 
     if (value && parseInt(value) !== room.maxNumber) {
-      await updateDoc(roomRef, { maxNumber: parseInt(value), drawnNumbers: [], currentMode: 'manual', tombolaActive: false, tombolaTarget: null })
+      socket.emit('updateRoom', roomData.id, { maxNumber: parseInt(value), drawnNumbers: [], currentMode: 'manual', tombolaActive: false, tombolaTarget: null })
     }
   })
 
   if (winnersHistoryBtn) {
     winnersHistoryBtn.addEventListener('click', async () => {
       closeDropdownMenu()
-      const snapshot = await getDoc(roomRef)
-      const room = snapshot.data() as GameRoom
+      const room = roomData
 
       const winners = room.winnersHistory || []
       if (winners.length === 0) {
@@ -748,7 +730,7 @@ async function setupHostControlsListeners(roomId: string) {
             color: '#fff'
           });
           if (confirm.isConfirmed) {
-            await updateDoc(roomRef, { winnersHistory: [] });
+            socket.emit('updateRoom', roomData.id, { winnersHistory: [] });
             Swal.fire({ title: '¡Borrado!', text: 'El historial está limpio.', icon: 'success', background: '#111827', color: '#fff', timer: 2000, showConfirmButton: false });
           }
         }
@@ -759,10 +741,9 @@ async function setupHostControlsListeners(roomId: string) {
   if (toggleModeBtnControls) {
     toggleModeBtnControls.addEventListener('click', async () => {
       closeDropdownMenu()
-      const snapshot = await getDoc(roomRef)
-      const room = snapshot.data() as GameRoom
+      const room = roomData
       const newMode = room.currentMode === 'manual' ? 'tombola' : 'manual'
-      await updateDoc(roomRef, { currentMode: newMode })
+      socket.emit('updateRoom', roomData.id, { currentMode: newMode })
     })
   }
 }
