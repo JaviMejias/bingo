@@ -486,7 +486,7 @@ export async function renderGameRoom(code: string, role: 'host' | 'player') {
     }
 
     const isReset = (previousMaxNumber !== -1 && updatedRoom.maxNumber !== previousMaxNumber) ||
-      (previousDrawnCount > 0 && updatedRoom.drawnNumbers.length === 0);
+      (previousDrawnCount > 1 && updatedRoom.drawnNumbers.length === 0);
 
     previousDrawnCount = updatedRoom.drawnNumbers.length;
     previousMaxNumber = updatedRoom.maxNumber;
