@@ -1,9 +1,9 @@
 import { io } from 'socket.io-client';
 
-// We use relative path or configured URL depending on environment.
-// For Docker deployment where both run on the same server, we use the same hostname but port 4001
-const backendHost = window.location.hostname;
-const SOCKET_URL = import.meta.env.VITE_BACKEND_URL || `http://${backendHost}:4001`;
+// En producción (cuando accedemos desde el dominio), usamos '/' para que Socket.io
+// se conecte al mismo dominio (por HTTPS) y Nginx enruta el tráfico al backend.
+const isDevelopment = window.location.port === '5173' || window.location.port === '5174';
+const SOCKET_URL = isDevelopment ? `http://${window.location.hostname}:4001` : '/';
 
 export const socket = io(SOCKET_URL, {
   autoConnect: true,
