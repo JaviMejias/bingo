@@ -1,786 +1,515 @@
-import { socket, authReady } from '../services/socket'
-import Swal from 'sweetalert2'
-import type { GameRoom } from '../types/game'
+import { socket, joinGameRoom, playerId, request } from '../services/socket'
+import { dialog, escapeHtml, showError } from '../services/dialog'
+import type { GameRoom, Winner } from '../types/game'
 import { renderBingoControls } from '../components/BingoControls'
 import { renderBingoBoard } from '../components/BingoBoard'
-import { renderLastNumbers } from '../components/LastNumbers'
 import confetti from 'canvas-confetti'
 
-async function findRoomByCode(code: string): Promise<{ id: string, data: GameRoom } | null> {
-  return new Promise((resolve) => {
-    socket.emit('joinRoom', code, (response: any) => {
-      if (response && response.success) {
-        resolve({ id: response.room.id, data: response.room })
-      } else {
-        resolve(null)
-      }
-    })
-  })
-}
+let activeCleanup: (() => void) | undefined
+export function cleanupGameRoom() { activeCleanup?.(); activeCleanup = undefined }
+const prizeName = (type: Winner['type']) => type === 'binguito' ? 'Binguito' : 'Cartón lleno'
 
-export async function renderGameRoom(code: string, role: 'host' | 'player') {
-  const app = document.querySelector<HTMLDivElement>('#app')
-  if (!app) return
+export function renderGameRoom(code: string, role: 'host' | 'player') {
+  cleanupGameRoom()
+  const app = document.querySelector<HTMLDivElement>('#app')!
+  const controller = new AbortController()
+  const { signal } = controller
+  let disposed = false
+  let room: GameRoom | undefined
+  let ready = false
+  let name = sessionStorage.getItem(`bingo_player_name_${code}`) || ''
+  let overlayTimer: ReturnType<typeof setInterval> | undefined
+  let overlayHideTimer: ReturnType<typeof setTimeout> | undefined
+  let celebrationTimer: ReturnType<typeof setInterval> | undefined
+  let lastRoundId = ''
+  let lastDrawnCount = 0
+  let wasDrawing = false
+  let knownWinners = new Set<string>()
+  let pendingReview = ''
+  let reviewResult = ''
+  let joining = false
 
-  const user = await authReady
+  app.innerHTML = '<div class="room-loading" role="status">Preparando tu sala…</div>'
+  const stopOverlay = () => {
+    clearInterval(overlayTimer)
+    clearTimeout(overlayHideTimer)
+    document.getElementById('tombola-overlay')?.remove()
+  }
+  const cleanup = () => {
+    disposed = true
+    ready = false
+    controller.abort()
+    stopOverlay()
+    clearInterval(celebrationTimer)
+    socket.off('connect', reconnect)
+    socket.off('disconnect', disconnected)
+    socket.off('roomUpdated', updated)
+    socket.off('roomDeleted', deleted)
+    dialog.close()
+    if (socket.connected) socket.emit('leaveRoom', {})
+  }
+  activeCleanup = cleanup
 
-  const roomResult = await findRoomByCode(code)
-  if (!roomResult) {
-    Swal.fire('Sala no encontrada', 'Esta sala ya no existe.', 'error')
+  async function action(event: string, extra: object = {}, expectedRound = room?.roundId) {
+    if (!room || !ready) throw new Error('Espera a que la sala termine de conectarse.')
+    await request(event, { roomId: room.id, roundId: expectedRound, ...extra })
+  }
+  async function run(event: string, extra: object = {}, expectedRound = room?.roundId) {
+    try { await action(event, extra, expectedRound) } catch (error) { if (!disposed) await showError(error) }
+  }
+  function setConnection(connected: boolean) {
+    ready = connected
+    const status = document.getElementById('connectionStatus')
+    if (status) {
+      status.textContent = connected ? 'Conectado' : 'Reconectando… espera un momento'
+      status.classList.toggle('is-offline', !connected)
+    }
+    app.classList.toggle('room-offline', !connected)
+    const offline = document.getElementById('offlineMessage')
+    if (offline) offline.hidden = connected
+    if (room) render(room, false)
+  }
+  function disconnected() { if (!disposed) setConnection(false) }
+  async function reconnect() {
+    if (disposed || joining || !room) return
+    joining = true
+    try {
+      const response = await joinGameRoom(code, role, name, signal)
+      if (disposed) return
+      ready = true
+      render(response.room, false)
+      setConnection(true)
+    } catch (error) { if (!disposed) { setConnection(false); await showError(error) } }
+    finally { joining = false }
+  }
+  function deleted(payload: { roomId: string }) {
+    if (payload.roomId !== room?.id || disposed) return
+    if (localStorage.getItem('bingo_last_host_code') === code) localStorage.removeItem('bingo_last_host_code')
+    cleanup()
+    activeCleanup = undefined
     window.location.hash = '#/'
-    return
+    void dialog.fire({ title: 'La sala se cerró', text: 'Pide un nuevo código al anfitrión para volver a jugar.', icon: 'info' })
   }
-
-  const roomData = roomResult.data
-
-  if (role === 'host') {
-    if (!user) {
-      Swal.fire('Acceso denegado', 'Necesitas iniciar sesión para ser host.', 'error')
-      window.location.hash = '#/'
-      return
-    }
-    if (user.uid !== roomData.hostId) {
-      Swal.fire('Acceso denegado', 'Solo el creador de la sala puede ser el host.', 'error')
-      window.location.hash = '#/'
-      return
-    }
+  function updated(next: GameRoom) {
+    if (!disposed && ready && next.id === room?.id) render(next, true)
   }
+  socket.on('disconnect', disconnected)
+  socket.on('connect', reconnect)
+  socket.on('roomUpdated', updated)
+  socket.on('roomDeleted', deleted)
 
-  let playerName = ''
-  if (role === 'player') {
-    playerName = sessionStorage.getItem(`bingo_player_name_${roomData.id}`) || ''
-    if (!playerName) {
-      const { value: name } = await Swal.fire({
-        title: 'Ingresa tu nombre',
-        input: 'text',
-        inputPlaceholder: 'Ej. Tía Marta',
-        allowOutsideClick: false,
-        allowEscapeKey: false,
-        background: '#111827',
-        color: '#fff',
-        confirmButtonColor: '#b026ff',
-        inputValidator: (val) => {
-          if (!val) return '¡Necesitas un nombre para jugar!'
-          return null
-        }
-      })
-      if (name) {
-        playerName = name
-        sessionStorage.setItem(`bingo_player_name_${roomData.id}`, name)
-      } else {
-        window.location.hash = '#/'
-        return
-      }
-    }
-  }
-
-  app.innerHTML = `
-    <div class="h-screen max-h-screen w-full flex flex-col bg-[#050510] text-white font-inter p-2 relative overflow-hidden">
-      
-      <!-- Neon Orbs -->
-      <div class="fixed top-[-20%] left-[-10%] w-[500px] h-[500px] bg-neon-purple/10 rounded-full blur-[150px] pointer-events-none z-0"></div>
-      <div class="fixed bottom-[-20%] right-[-10%] w-[500px] h-[500px] bg-neon-blue/10 rounded-full blur-[150px] pointer-events-none z-0"></div>
-
-      <!-- Header Mejorado -->
-      <div class="w-full mx-auto flex-shrink-0 z-50 animate-slide-up mb-2 relative">
-        <div class="glass-card rounded-xl p-3 sm:p-4 flex flex-col lg:flex-row justify-between items-center gap-4 lg:gap-6 border-l-4 border-l-neon-purple shadow-xl relative">
-          
-          <!-- Izquierda: Controles (Inputs y Buscar) -->
-          <div id="controls-left" class="flex-shrink-0 w-full lg:w-auto flex justify-center lg:justify-start z-10">
-            ${role === 'player' ? `
-              <button id="playerBingoBtn" class="hidden bg-red-600 hover:bg-red-500 text-white font-black text-xl sm:text-2xl py-2 sm:py-3 px-6 sm:px-8 rounded-full shadow-[0_0_20px_rgba(255,0,0,0.8)] border-4 border-red-400 animate-pulse transform hover:scale-105 transition-all uppercase tracking-widest flex items-center gap-2">
-                <i class="fas fa-bullhorn animate-bounce"></i> ¡BINGO!
-              </button>
-            ` : ''}
+  function mount() {
+    app.classList.remove('room-offline')
+    app.innerHTML = `
+      <main class="game-shell ${role === 'host' ? 'host-room' : 'player-room'}">
+        <div class="neon-orb orb-purple" aria-hidden="true"></div><div class="neon-orb orb-blue" aria-hidden="true"></div>
+        <header class="room-header glass-card animate-slide-up">
+          <div class="primary-controls">
+            ${role === 'host' ? '<div id="controls-left"></div>' : '<div class="player-actions"><button id="playerBingoBtn" class="action-button bingo-button" type="button"><span>¡Tengo Bingo!</span></button><p id="playerStatus" class="control-hint" role="status"></p></div>'}
+            <form id="searchForm" class="board-search quick-search"><label for="searchNumber">Buscar número</label><div class="input-action"><input id="searchNumber" type="text" inputmode="numeric" pattern="[0-9]+" autocomplete="off" aria-describedby="searchResult" required placeholder="Ej. 7"><button class="action-button secondary-action" type="submit">Buscar</button></div><span id="searchResult" class="control-hint search-feedback" role="status"></span></form><button id="toggleSearchBtn" class="action-button secondary-action mobile-search-toggle" type="button" aria-controls="searchForm" aria-expanded="false"><i class="fas fa-search" aria-hidden="true"></i> Buscar</button>
           </div>
-
-          <!-- Centro: Últimos Números -->
-          <div class="w-full lg:w-auto flex justify-center lg:absolute lg:left-1/2 lg:-translate-x-1/2 z-10">
-            <div class="flex items-center gap-4 bg-gray-900/60 rounded-xl px-5 sm:px-6 py-2 border border-gray-700 shadow-inner">
-              <div class="flex items-center gap-2">
-                <span class="text-[10px] sm:text-xs font-bold text-gray-500 uppercase tracking-widest">Ant:</span>
-                <span id="previousLastNumber" class="text-xl sm:text-2xl font-outfit font-bold text-gray-400 w-8 text-center">--</span>
+          <div class="latest-numbers" aria-label="Últimos números">
+            <div class="previous-number"><span>Anterior</span><strong id="previousLastNumber">—</strong></div>
+            <div class="last-number"><span><i class="fas fa-bolt" aria-hidden="true"></i> Último</span><strong id="currentLastNumber" aria-live="polite">—</strong></div>
+          </div>
+          <div class="room-access">
+            <button id="roomCodeDisplay" class="room-code" aria-label="Copiar código de sala"><span>Código sala</span><strong></strong></button>
+            <details id="roomOptions" class="room-options">
+              <summary aria-label="Opciones de sala" title="Abrir opciones de sala"><i class="fas fa-cog" aria-hidden="true"></i><span>Opciones</span></summary>
+              <div class="options-panel glass-card">
+                <div class="options-heading"><h2>Opciones de sala</h2><button id="closeOptionsBtn" type="button" aria-label="Cerrar opciones">×</button></div>
+                <span id="connectionStatus" class="connection-status" role="status">Conectado</span>
+                <div class="room-meta"><span id="roundLabel"></span><span id="drawnCount"></span><span id="playerCount"></span></div>
+                ${role === 'host' ? '<div class="mode-picker" role="group" aria-label="Cómo sacar los números"><button id="tombolaModeBtn" type="button">Tómbola</button><button id="manualModeBtn" type="button">Manual</button></div>' : '<p class="player-identity">Jugando como <strong id="playerNameDisplay"></strong></p><p id="playerInstructions" class="panel-copy"></p>'}
+                ${role === 'host' ? '<div class="room-tools"><button id="winnersHistoryBtnControls" class="text-action" type="button"><i class="fas fa-trophy" aria-hidden="true"></i> Historial de premios</button><button id="configMaxNumBtnControls" class="text-action" type="button"><i class="fas fa-sliders-h" aria-hidden="true"></i> Cantidad de números</button><button id="resetGameBtnControls" class="text-action" type="button"><i class="fas fa-redo" aria-hidden="true"></i> Empezar otra partida</button></div>' : '<p class="small-note">El anfitrión revisa tu cartón y confirma el premio.</p>'}
+                <a href="#/" class="text-action room-brand">Volver al inicio</a>
               </div>
-              <div class="w-px h-6 sm:h-8 bg-gray-700"></div>
-              <div class="flex items-center gap-3 group relative">
-                <div class="absolute inset-0 bg-neon-blue/10 blur-md rounded-full opacity-0 group-hover:opacity-100 transition-opacity"></div>
-                <span class="text-[10px] sm:text-xs font-bold text-neon-blue uppercase tracking-widest flex items-center">
-                  <i class="fa-solid fa-bolt mr-1"></i>Último:
-                </span>
-                <span id="currentLastNumber" class="text-3xl sm:text-5xl font-outfit font-black text-transparent bg-clip-text bg-gradient-to-b from-white to-neon-blue drop-shadow-[0_0_10px_rgba(0,240,255,0.5)] transition-all duration-300 transform scale-100 relative z-10 w-12 sm:w-16 text-center">
-                  --
-                </span>
-              </div>
-            </div>
+            </details>
           </div>
-          
-          <!-- Derecha: Código y Dropdown -->
-          <div class="flex items-center justify-center lg:justify-end gap-4 flex-shrink-0 w-full lg:w-auto z-10">
-            <div class="text-center lg:text-right">
-              <p class="text-[10px] sm:text-xs text-gray-400 uppercase tracking-widest font-bold">Código Sala</p>
-              <h1 id="roomCodeDisplay" class="text-2xl font-outfit font-black text-transparent bg-clip-text bg-gradient-to-r from-white to-gray-400 cursor-pointer hover:from-neon-blue hover:to-neon-purple transition-all" title="Copiar código">
-                ${code}
-              </h1>
-            </div>
-            <div id="controls-right" class="relative z-50"></div>
-          </div>
+        </header>
+        <div id="offlineMessage" class="offline-message" role="alert" hidden>Se perdió la conexión. Estamos recuperando tu partida; espera antes de continuar.</div>
+        <div class="room-layout">
+          <section class="board-panel glass-card" aria-label="Tablero de números"><h1 class="sr-only">Tablero de Bingo</h1><span id="boardHint" class="sr-only"></span><div id="bingoBoard" class="bingo-grid" aria-label="Números del bingo"></div></section>
+          <aside class="game-panel" aria-label="${role === 'host' ? 'Revisión de Bingo y ganadores' : 'Ganadores de la partida'}" hidden>
+            ${role === 'host' ? '<section id="hostBingoSidebar" class="panel-card caller-panel glass-card" hidden><h2 id="callersTitle">Avisos de Bingo</h2><p id="callersHint" class="panel-copy"></p><div id="hostBingoCallersList"></div></section>' : ''}
+            <section id="roundResults" class="panel-card round-results glass-card" hidden><h2 id="roundResultsTitle"></h2><div id="roundWinners"></div><p id="roundResultsHint" class="panel-copy"></p>${role === 'host' ? '<button id="newGameBtn" class="action-button primary-action" type="button">Iniciar un nuevo juego</button>' : ''}</section>
+          </aside>
         </div>
-      </div>
-
-      <!-- Main Content: Board & Sidebar -->
-      <div class="flex-grow min-h-0 w-full relative z-10 flex gap-4 transition-all duration-500">
-        <div id="bingoBoard" class="glass-card rounded-xl w-full h-full p-2 border border-gray-800 flex flex-col justify-center flex-grow transition-all duration-500"></div>
-
-        <!-- Host Validation Sidebar -->
-        ${role === 'host' ? `
-          <div id="hostBingoSidebar" class="w-0 flex-shrink-0 transition-all duration-500 overflow-hidden flex flex-col gap-2 rounded-xl border-none">
-            <div class="glass-card bg-gray-900 border border-neon-green rounded-xl flex-grow flex flex-col w-72 sm:w-80 shadow-[0_0_30px_rgba(57,255,20,0.2)] overflow-hidden">
-              <div class="bg-neon-green/20 p-3 border-b border-neon-green flex items-center justify-center flex-shrink-0">
-                <h3 class="text-neon-green font-black tracking-widest flex items-center gap-2 text-sm sm:text-base animate-pulse">
-                  <i class="fas fa-exclamation-triangle"></i> ¡BINGO CANTADO!
-                </h3>
-              </div>
-              <div id="hostBingoCallersList" class="flex-grow overflow-y-auto space-y-3 p-3 scrollbar-thin scrollbar-thumb-neon-green scrollbar-track-transparent">
-              </div>
-            </div>
-          </div>
-        ` : ''}
-    </div>
-  `
-
-  const roomCodeElement = document.getElementById('roomCodeDisplay')
-  if (roomCodeElement) {
-    roomCodeElement.addEventListener('click', async () => {
-      try {
-        if (navigator.clipboard && navigator.clipboard.writeText) {
-          await navigator.clipboard.writeText(code)
-        } else {
-          const textArea = document.createElement("textarea");
-          textArea.value = code;
-          textArea.style.position = "fixed";
-          textArea.style.left = "-999999px";
-          textArea.style.top = "-999999px";
-          document.body.appendChild(textArea);
-          textArea.focus();
-          textArea.select();
-          document.execCommand('copy');
-          textArea.remove();
-        }
-        Swal.fire({
-          toast: true, position: 'top-end', icon: 'success', title: 'Código copiado',
-          showConfirmButton: false, timer: 1500, background: '#111827', color: '#fff'
-        })
-      } catch (err) {
-        console.error('Failed to copy', err)
+      </main>`
+    document.querySelector('#roomCodeDisplay strong')!.textContent = code
+    if (role === 'player') document.getElementById('playerNameDisplay')!.textContent = name
+    app.addEventListener('click', onClick, { signal })
+    app.addEventListener('submit', onSubmit, { signal })
+    app.addEventListener('beforeinput', onBeforeNumberInput, { signal })
+    app.addEventListener('input', onNumberInput, { signal })
+    document.addEventListener('click', event => {
+      const options = document.getElementById('roomOptions') as HTMLDetailsElement | null
+      if (options?.open && !options.contains(event.target as Node)) options.open = false
+      const search = document.getElementById('searchForm')
+      const toggle = document.getElementById('toggleSearchBtn')
+      if (search?.classList.contains('is-open') && !search.contains(event.target as Node) && !toggle?.contains(event.target as Node) && !(event.target as HTMLElement).closest('.swal2-container')) closeMobileSearch()
+    }, { signal })
+    document.addEventListener('keydown', event => {
+      if (event.key !== 'Escape') return
+      if (document.getElementById('searchForm')?.classList.contains('is-open')) {
+        closeMobileSearch()
+        document.getElementById('toggleSearchBtn')?.focus()
       }
+      const options = document.getElementById('roomOptions') as HTMLDetailsElement | null
+      if (options?.open) { options.open = false; options.querySelector('summary')?.focus() }
+    }, { signal })
+  }
+
+  function render(next: GameRoom, notify: boolean) {
+    if (disposed) return
+    const previous = room
+    const sameRound = lastRoundId === next.roundId
+    const myPending = next.bingoCallers.some(c => c.playerId === playerId)
+    const oldPending = previous?.bingoCallers.some(c => c.playerId === playerId)
+    const newWinners = next.winnersHistory.filter(w => !knownWinners.has(w.id))
+    const myWins = newWinners.filter(w => w.playerId === playerId && w.roundId === next.roundId)
+    if (sameRound && oldPending && !myPending) reviewResult = myWins.length ? '¡Tu premio fue confirmado!' : 'Tu aviso fue revisado. Si corresponde, puedes volver a cantar Bingo.'
+    if (!sameRound) {
+      reviewResult = ''
+      document.getElementById('searchResult')!.textContent = ''
+      document.querySelectorAll('.search-match').forEach(el => el.classList.remove('search-match'))
+      document.querySelectorAll('.snake-container').forEach(el => el.remove())
+    }
+    app.querySelectorAll<HTMLButtonElement | HTMLInputElement>('.room-tools button, #searchForm button, #searchNumber').forEach(el => { el.disabled = !ready })
+    room = next
+    document.getElementById('roundLabel')!.textContent = `Partida ${next.roundNumber}`
+    document.getElementById('currentLastNumber')!.textContent = String(next.drawnNumbers.at(-1) ?? '—')
+    document.getElementById('previousLastNumber')!.textContent = String(next.drawnNumbers.at(-2) ?? '—')
+    document.getElementById('drawnCount')!.textContent = `${next.drawnNumbers.length} de ${next.maxNumber} números`
+    document.getElementById('playerCount')!.textContent = `${next.playerCount} ${next.playerCount === 1 ? 'jugador conectado' : 'jugadores conectados'}`
+    document.getElementById('boardHint')!.textContent = role === 'host' && next.currentMode === 'manual' ? 'Toca un número para marcarlo' : 'Los números se actualizan solos'
+    renderBingoBoard(next, role === 'host' && ready && next.currentMode === 'manual', number => {
+      if (!room) return
+      const drawn = !room.drawnNumbers.includes(number)
+      if (!drawn) {
+        const roundId = room.roundId
+        void dialog.fire({ title: `¿Desmarcar el ${number}?`, text: 'Se quitará del tablero de todos los jugadores.', showCancelButton: true, confirmButtonText: 'Sí, desmarcar' }).then(result => { if (result.isConfirmed && !disposed) void run('setNumber', { number, drawn }, roundId) })
+      } else void run('setNumber', { number, drawn })
     })
-  }
-
-  const playerBingoBtn = document.getElementById('playerBingoBtn')
-  if (playerBingoBtn) {
-    playerBingoBtn.addEventListener('click', async () => {
-      const result = await Swal.fire({
-        title: '¿Cantar BINGO?',
-        text: '¡Asegúrate de que tus números coincidan!',
-        icon: 'warning',
-        showCancelButton: true,
-        confirmButtonColor: '#d33',
-        cancelButtonColor: '#3085d6',
-        confirmButtonText: '¡Sí, BINGO!',
-        cancelButtonText: 'Cancelar',
-        background: '#111827',
-        color: '#fff'
-      })
-
-      if (result.isConfirmed) {
-        socket.emit('addBingoCaller', roomData.id, playerName)
-        Swal.fire({
-          toast: true,
-          position: 'bottom-end',
-          title: '¡Bingo Enviado!',
-          text: 'Esperando que el anfitrión lo valide...',
-          icon: 'success',
-          showConfirmButton: false,
-          background: '#111827',
-          color: '#fff'
-        })
-      }
-    })
-  }
-
-  let localInRevision = new Set<string>();
-  let localValidated = new Map<string, string>(); // name -> 'binguito' | 'carton'
-  let currentBingoCallers: string[] = [];
-  let renderCallersList: () => void = () => {};
-
-  if (role === 'host') {
-    const callersListDiv = document.getElementById('hostBingoCallersList');
-
-    renderCallersList = () => {
-      if (!callersListDiv) return;
-      callersListDiv.innerHTML = currentBingoCallers.map(name => {
-        const inRevision = localInRevision.has(name);
-        const validatedType = localValidated.get(name);
-        
-        const isBinguitoVal = validatedType === 'binguito';
-        const isCartonVal = validatedType === 'carton';
-        
-        let borderClass = 'border-neon-green shadow-[0_0_10px_rgba(57,255,20,0.2)]';
-        let iconClass = 'fa-bullhorn text-neon-green';
-        let bgClass = 'bg-gray-800/50';
-        
-        if (isBinguitoVal) {
-          borderClass = 'border-emerald-400 shadow-[0_0_15px_rgba(16,185,129,0.6)]';
-          iconClass = 'fa-check-double text-emerald-400';
-          bgClass = 'bg-emerald-900/40';
-        } else if (isCartonVal) {
-          borderClass = 'border-neon-blue shadow-[0_0_15px_rgba(0,240,255,0.6)]';
-          iconClass = 'fa-trophy text-neon-blue';
-          bgClass = 'bg-blue-900/40';
-        }
-
-        return `
-        <div id="caller-card-${name}" data-card-name="${name}" class="glass-card ${bgClass} rounded-xl p-3 border-l-4 ${borderClass} flex flex-col gap-2 relative overflow-hidden transition-all duration-500 transform scale-100 cursor-pointer hover:brightness-125">
-          ${inRevision ? `
-          <div class="snake-container rounded-xl">
-            <span></span><span></span><span></span><span></span>
-          </div>
-          ` : ''}
-          <div class="font-bold text-white text-base sm:text-lg flex items-center justify-between pointer-events-none">
-            <div class="flex items-center gap-2">
-              <i class="fas ${iconClass} animate-pulse"></i> ${name}
-            </div>
-            ${!validatedType ? `
-            <span class="text-[10px] uppercase tracking-wider px-2 py-1 rounded-full transition-colors ${inRevision ? 'bg-neon-blue/20 text-neon-blue' : 'bg-gray-800 text-gray-400'}">
-              <i class="fas ${inRevision ? 'fa-eye' : 'fa-search'}"></i> ${inRevision ? 'Revisando' : 'Revisar'}
-            </span>
-            ` : ''}
-          </div>
-          <div class="flex flex-col gap-2 mt-2 relative z-10">
-            <button data-type="binguito" data-name="${name}" class="flex items-center justify-between w-full ${isBinguitoVal ? 'bg-emerald-500 text-white shadow-[0_0_10px_rgba(16,185,129,0.8)]' : 'bg-emerald-500/20 text-emerald-400 hover:bg-emerald-500/40'} border border-emerald-500/50 py-1.5 px-3 rounded-lg transition-colors group">
-              <span class="text-sm font-bold pointer-events-none">${isBinguitoVal ? 'Confirmar Premio' : 'Binguito'}</span>
-              <i class="fas fa-check-double group-hover:scale-125 transition-transform pointer-events-none"></i>
-            </button>
-            <button data-type="carton" data-name="${name}" class="flex items-center justify-between w-full ${isCartonVal ? 'bg-neon-blue text-white shadow-[0_0_10px_rgba(0,240,255,0.8)]' : 'bg-neon-blue/20 text-neon-blue hover:bg-neon-blue/40'} border border-neon-blue/50 py-1.5 px-3 rounded-lg transition-colors group">
-              <span class="text-sm font-bold pointer-events-none">${isCartonVal ? 'Confirmar Premio' : 'Cartón Lleno'}</span>
-              <i class="fas fa-trophy group-hover:scale-125 transition-transform pointer-events-none"></i>
-            </button>
-            <button data-type="falsa" data-name="${name}" class="flex items-center justify-between w-full bg-red-500/20 hover:bg-red-500/40 text-red-400 border border-red-500/50 py-1.5 px-3 rounded-lg transition-colors group">
-              <span class="text-sm font-bold pointer-events-none">Falsa Alarma</span>
-              <i class="fas fa-times group-hover:scale-125 transition-transform pointer-events-none"></i>
-            </button>
-          </div>
-        </div>
-        `
-      }).join('');
-    };
-
-    callersListDiv?.addEventListener('click', async (e) => {
-      const btn = (e.target as HTMLElement).closest('button');
-      
-      // Card click (Revision Toggle)
-      if (!btn) {
-        const cardElem = (e.target as HTMLElement).closest('[data-card-name]');
-        if (cardElem) {
-          const name = (cardElem as HTMLElement).dataset.cardName;
-          if (name) {
-            if (localInRevision.has(name)) localInRevision.delete(name);
-            else localInRevision.add(name);
-            renderCallersList();
-          }
-        }
-        return;
-      }
-
-      const type = btn.dataset.type;
-      const name = btn.dataset.name;
-      if (!type || !name) return;
-
-      const card = document.getElementById(`caller-card-${name}`);
-
-      if (type === 'falsa') {
-        if (card) card.classList.add('animate-lose');
-        setTimeout(() => {
-          localInRevision.delete(name);
-          localValidated.delete(name);
-          socket.emit('removeBingoCaller', roomData.id, name);
-        }, 500);
-        return;
-      }
-
-      if (type === 'binguito' || type === 'carton') {
-        const currentValidated = localValidated.get(name);
-        if (currentValidated !== type) {
-          // First click: Validate
-          localValidated.set(name, type);
-          localInRevision.delete(name);
-          renderCallersList();
-        } else {
-          // Second click: Confirm and Save
-          if (card) card.classList.add('animate-win');
-          setTimeout(() => {
-            const winType = type === 'binguito' ? 'Binguito' : 'Cartón Lleno';
-            const newWinner = {
-              id: Math.random().toString(36).substr(2, 9),
-              name,
-              date: Date.now(),
-              type: winType
-            };
-            
-            localInRevision.clear();
-            localValidated.clear();
-            
-            socket.emit('addWinner', roomData.id, newWinner);
-            Swal.fire({ toast: true, position: 'top-end', title: `${name} guardado en historial`, icon: 'success', background: '#111827', color: '#fff', showConfirmButton: false, timer: 3000 });
-          }, 500);
-        }
-      }
-    });
-  }
-
-  let previousDrawnCount = -1;
-  let previousMaxNumber = -1;
-  let wasTombolaActive = false;
-  let initialLoad = true;
-  let processedWinners = new Set<string>();
-
-  // Initial render
-  renderBingoBoard(roomData, role === 'host');
-  renderLastNumbers(
-    roomData,
-    document.getElementById('currentLastNumber') as HTMLDivElement,
-    document.getElementById('previousLastNumber') as HTMLDivElement
-  );
-  if (role === 'host') {
-    renderBingoControls(roomData);
-    if (!app.dataset.hostControlsListenersSetup) {
-      setupHostControlsListeners(roomData);
-      app.dataset.hostControlsListenersSetup = 'true';
-    }
-  }
-
-  socket.on('roomDeleted', () => {
-    Swal.fire({ title: 'Sala eliminada', text: 'El host ha cerrado la sala.', icon: 'info', background: '#111827', color: '#fff' })
-    window.location.hash = '#/'
-  });
-
-  socket.on('roomUpdated', (updatedRoom: GameRoom) => {
-    
-    if (updatedRoom.winnersHistory && updatedRoom.winnersHistory.length > 0) {
-      updatedRoom.winnersHistory.forEach(w => {
-        if (!processedWinners.has(w.id)) {
-          processedWinners.add(w.id);
-          if (!initialLoad && role === 'player' && w.name === playerName) {
-            Swal.fire({
-              title: '¡FELICIDADES!',
-              html: `<p class="text-xl">¡Tu cartón fue validado y ganaste el premio de <strong>${w.type}</strong>!</p>`,
-              imageUrl: 'https://cdn-icons-png.flaticon.com/512/5434/5434449.png',
-              imageWidth: 100,
-              background: '#111827',
-              color: '#fff',
-              confirmButtonColor: '#b026ff',
-              confirmButtonText: '¡Increíble!',
-              backdrop: `rgba(0,0,0,0.8)`
-            });
-            const duration = 5 * 1000;
-            const animationEnd = Date.now() + duration;
-            const defaults = { startVelocity: 30, spread: 360, ticks: 60, zIndex: 10000 };
-            function randomInRange(min: number, max: number) { return Math.random() * (max - min) + min; }
-            const interval: any = setInterval(function() {
-              const timeLeft = animationEnd - Date.now();
-              if (timeLeft <= 0) return clearInterval(interval);
-              const particleCount = 50 * (timeLeft / duration);
-              confetti({ ...defaults, particleCount, origin: { x: randomInRange(0.1, 0.3), y: Math.random() - 0.2 } });
-              confetti({ ...defaults, particleCount, origin: { x: randomInRange(0.7, 0.9), y: Math.random() - 0.2 } });
-            }, 250);
-          }
-        }
-      });
-    }
-    
-    initialLoad = false;
-
-    if (updatedRoom.bingoCallers && updatedRoom.bingoCallers.length > 0) {
-      if (role === 'host') {
-        const sidebar = document.getElementById('hostBingoSidebar');
-        if (sidebar) {
-          sidebar.classList.remove('w-0');
-          sidebar.classList.add('w-72', 'sm:w-80');
-          
-          // Re-render callers list using the new data
-          const callersListDiv = document.getElementById('hostBingoCallersList');
-          if (callersListDiv) {
-            // @ts-ignore
-            currentBingoCallers = updatedRoom.bingoCallers;
-            // @ts-ignore
-            renderCallersList();
-          }
-        }
-      } else {
-        if (!updatedRoom.bingoCallers.includes(playerName)) {
-          const currentSwalTitle = Swal.getTitle()?.textContent;
-          if (currentSwalTitle !== '¿Cantar BINGO?' && currentSwalTitle !== '¡Bingo Enviado!') {
-            Swal.fire({
-              toast: true,
-              position: 'bottom-end',
-              title: '¡Alguien cantó Bingo!',
-              text: 'Esperando validación del anfitrión...',
-              icon: 'info',
-              showConfirmButton: false,
-              background: '#111827',
-              color: '#fff'
-            });
-          }
-        }
-      }
-    } else {
-      if (role === 'host') {
-        const sidebar = document.getElementById('hostBingoSidebar');
-        if (sidebar) {
-          sidebar.classList.remove('w-72', 'sm:w-80');
-          sidebar.classList.add('w-0');
-        }
-      } else if (role === 'player') {
-        const title = Swal.getTitle()?.textContent;
-        if (title === '¡Bingo Enviado!' || title === '¡Alguien cantó Bingo!') {
-          Swal.close()
-        }
-      }
-    }
-
-    if (playerBingoBtn) {
-      if (updatedRoom.drawnNumbers.length >= 4) {
-        playerBingoBtn.classList.remove('hidden');
-      } else {
-        playerBingoBtn.classList.add('hidden');
-      }
-    }
-
-    if (updatedRoom.tombolaActive && updatedRoom.tombolaTarget) {
-      renderTombolaOverlay(updatedRoom.maxNumber);
-      wasTombolaActive = true;
-    } else if (wasTombolaActive && !updatedRoom.tombolaActive) {
-      wasTombolaActive = false;
-      const winningNumber = updatedRoom.drawnNumbers[updatedRoom.drawnNumbers.length - 1];
-      stopTombolaAndShowWinner(winningNumber);
-    }
-
-    if (previousDrawnCount !== -1 && updatedRoom.drawnNumbers.length > previousDrawnCount && !wasTombolaActive) {
-      confetti({
-        particleCount: 100,
-        spread: 70,
-        origin: { y: 0.3 },
-        colors: ['#b026ff', '#00f0ff', '#ff0055', '#39ff14'],
-        zIndex: 9999
-      });
-
-      const currNumEl = document.getElementById('currentLastNumber');
-      if (currNumEl) {
-        currNumEl.classList.remove('scale-100');
-        currNumEl.classList.add('scale-125', 'text-white');
-        setTimeout(() => {
-          currNumEl.classList.remove('scale-125', 'text-white');
-          currNumEl.classList.add('scale-100');
-        }, 300);
-      }
-    }
-
-    const isReset = (previousMaxNumber !== -1 && updatedRoom.maxNumber !== previousMaxNumber) ||
-      (previousDrawnCount > 1 && updatedRoom.drawnNumbers.length === 0);
-
-    previousDrawnCount = updatedRoom.drawnNumbers.length;
-    previousMaxNumber = updatedRoom.maxNumber;
-
-    if (isReset) {
-      const boardContainer = document.getElementById('bingoBoard');
-      if (boardContainer) {
-        boardContainer.classList.add('animate-shatter');
-
-        setTimeout(() => {
-          renderBingoBoard(updatedRoom, role === 'host');
-          renderLastNumbers(
-            updatedRoom,
-            document.getElementById('currentLastNumber') as HTMLDivElement,
-            document.getElementById('previousLastNumber') as HTMLDivElement
-          );
-          boardContainer.classList.remove('animate-shatter');
-
-          const boardGrid = document.querySelector('#bingoBoard .grid');
-          if (boardGrid) {
-            boardGrid.classList.add('animate-rebuild');
-          }
-
-          if (role === 'host') {
-            renderBingoControls(updatedRoom);
-            if (!app.dataset.hostControlsListenersSetup) {
-              setupHostControlsListeners(roomData);
-              app.dataset.hostControlsListenersSetup = 'true';
-            }
-          }
-        }, 500);
-        return;
-      }
-    }
-
-    renderBingoBoard(updatedRoom, role === 'host')
-    renderLastNumbers(
-      updatedRoom,
-      document.getElementById('currentLastNumber') as HTMLDivElement,
-      document.getElementById('previousLastNumber') as HTMLDivElement
-    )
-
     if (role === 'host') {
-      renderBingoControls(updatedRoom)
-
-      if (!app.dataset.hostControlsListenersSetup) {
-        setupHostControlsListeners(roomData)
-        app.dataset.hostControlsListenersSetup = 'true'
+      renderBingoControls(next)
+      for (const mode of ['tombola', 'manual']) {
+        const button = document.getElementById(`${mode}ModeBtn`) as HTMLButtonElement
+        button.setAttribute('aria-pressed', String(next.currentMode === mode))
+        button.disabled = !ready || next.tombolaActive || next.phase === 'finished'
       }
-    }
-  })
-}
-
-function renderTombolaOverlay(maxNumber: number) {
-  let overlay = document.getElementById('tombola-overlay');
-  if (!overlay) {
-    overlay = document.createElement('div');
-    overlay.id = 'tombola-overlay';
-    overlay.className = 'fixed inset-0 z-[9999] bg-black/90 backdrop-blur-md flex flex-col items-center justify-center opacity-0 transition-opacity duration-300';
-
-    const container = document.createElement('div');
-    container.className = 'relative w-64 h-64 sm:w-80 sm:h-80 rounded-full border-8 border-neon-purple shadow-[0_0_50px_rgba(176,38,255,0.8)] flex items-center justify-center bg-gray-900 overflow-hidden';
-
-    const numberDisplay = document.createElement('div');
-    numberDisplay.id = 'tombola-number-display';
-    numberDisplay.className = 'text-7xl sm:text-9xl font-black font-outfit text-transparent bg-clip-text bg-gradient-to-b from-white to-neon-blue drop-shadow-md';
-    numberDisplay.innerText = '0';
-
-    container.appendChild(numberDisplay);
-    overlay.appendChild(container);
-
-    document.body.appendChild(overlay);
-
-    requestAnimationFrame(() => {
-      overlay!.style.opacity = '1';
-    });
-
-    const interval = setInterval(() => {
-      const display = document.getElementById('tombola-number-display');
-      if (display) {
-        display.innerText = Math.floor(Math.random() * maxNumber + 1).toString();
+      document.getElementById('callersTitle')!.textContent = next.bingoCallers.length ? `¡Bingo! ${next.bingoCallers.length} por revisar` : 'Avisos de Bingo'
+      document.getElementById('callersHint')!.textContent = next.bingoCallers.length ? 'Comprueba cada cartón antes de confirmar el premio. Puedes reconocer a varios ganadores.' : 'Cuando alguien cante Bingo, su nombre aparecerá aquí.'
+      const list = document.getElementById('hostBingoCallersList')!
+      list.replaceChildren()
+      for (const caller of next.bingoCallers) {
+        const card = document.createElement('article')
+        card.className = 'caller-card'
+        const title = document.createElement('h3')
+        title.textContent = caller.name
+        card.appendChild(title)
+        for (const [type, label] of [['binguito', 'Premiar Binguito'], ['carton', 'Premiar cartón lleno'], ['false', 'No corresponde']]) {
+          const button = document.createElement('button')
+          button.type = 'button'
+          button.className = `action-button ${type === 'false' ? 'secondary-action' : 'prize-action'}`
+          button.textContent = label
+          button.dataset.playerId = caller.playerId
+          button.dataset.prize = type
+          button.disabled = !ready
+          card.appendChild(button)
+        }
+        list.appendChild(card)
       }
-    }, 50);
-
-    overlay.dataset.intervalId = interval.toString();
-  }
-}
-
-function stopTombolaAndShowWinner(winner: number) {
-  const overlay = document.getElementById('tombola-overlay');
-  if (overlay) {
-    if (overlay.dataset.intervalId) clearInterval(parseInt(overlay.dataset.intervalId));
-
-    const display = document.getElementById('tombola-number-display');
-    if (display) {
-      display.innerText = winner.toString();
-      display.className = 'text-[8rem] sm:text-[11rem] font-black font-outfit text-white drop-shadow-[0_0_30px_rgba(57,255,20,1)] scale-125 transition-all duration-300';
-    }
-
-    const container = display?.parentElement;
-    if (container) {
-      container.className = 'relative w-64 h-64 sm:w-80 sm:h-80 rounded-full border-8 border-neon-green shadow-[0_0_80px_rgba(57,255,20,1)] flex items-center justify-center bg-gray-900 overflow-hidden transition-all duration-300 scale-110';
-    }
-
-    confetti({
-      particleCount: 200, spread: 120, origin: { y: 0.4 }, colors: ['#39ff14', '#ffffff', '#00f0ff'], zIndex: 10000
-    });
-
-    setTimeout(() => {
-      overlay.style.opacity = '0';
-      setTimeout(() => overlay.remove(), 500);
-    }, 3000);
-  }
-}
-
-function closeDropdownMenu() {
-  const dropdownMenu = document.getElementById('dropdownMenuControls')
-  if (dropdownMenu && !dropdownMenu.classList.contains('pointer-events-none')) {
-    dropdownMenu.classList.remove('opacity-100', 'scale-100')
-    dropdownMenu.classList.add('opacity-0', 'scale-95', 'pointer-events-none')
-  }
-}
-
-async function setupHostControlsListeners(roomData: GameRoom) {
-  
-  const dropdownToggle = document.getElementById('dropdownToggleControls') as HTMLButtonElement
-  const dropdownMenu = document.getElementById('dropdownMenuControls') as HTMLDivElement
-  const resetButton = document.getElementById('resetGameBtnControls') as HTMLButtonElement
-  const configButton = document.getElementById('configMaxNumBtnControls') as HTMLButtonElement
-  const toggleModeBtnControls = document.getElementById('toggleModeBtnControls') as HTMLButtonElement
-  const winnersHistoryBtn = document.getElementById('winnersHistoryBtnControls') as HTMLButtonElement
-
-  const getLatestRoom = async () => {
-    return new Promise<GameRoom>((resolve) => {
-      socket.emit('joinRoomById', roomData.id, (response: any) => {
-        resolve(response.room || roomData)
-      })
-    })
-  }
-
-  if (!dropdownToggle || !dropdownMenu || !resetButton || !configButton) return
-
-  dropdownToggle.addEventListener('click', (e) => {
-    e.stopPropagation()
-    const isClosed = dropdownMenu.classList.contains('pointer-events-none')
-    if (isClosed) {
-      dropdownMenu.classList.remove('opacity-0', 'scale-95', 'pointer-events-none')
-      dropdownMenu.classList.add('opacity-100', 'scale-100')
+      document.getElementById('hostBingoSidebar')!.classList.toggle('has-callers', next.bingoCallers.length > 0)
+      document.getElementById('hostBingoSidebar')!.hidden = next.bingoCallers.length === 0
     } else {
-      closeDropdownMenu()
+      const button = document.getElementById('playerBingoBtn') as HTMLButtonElement
+      const canCall = ready && next.drawnNumbers.length >= 4 && !myPending
+      button.disabled = !canCall
+      button.textContent = myPending ? 'Bingo enviado ✓' : '¡Tengo Bingo!'
+      document.getElementById('playerInstructions')!.textContent = 'Sigue los números en tu cartón. Cuando completes el premio que están jugando, pulsa el botón de abajo.'
+      document.getElementById('playerStatus')!.textContent = myPending ? 'El anfitrión recibió tu aviso. Espera mientras revisa tu cartón.' : next.drawnNumbers.length < 4 ? '' : reviewResult || 'Puedes avisar cuando tengas Binguito o cartón lleno.'
     }
-  })
-
-  document.addEventListener('click', (e) => {
-    if (!dropdownMenu.contains(e.target as Node) && !dropdownToggle.contains(e.target as Node)) {
-      closeDropdownMenu()
+    const winners = next.winnersHistory.filter(w => w.roundId === next.roundId)
+    const results = document.getElementById('roundResults')!
+    results.hidden = next.phase !== 'finished' && next.drawnNumbers.length < next.maxNumber
+    const showPanel = !results.hidden || (role === 'host' && next.bingoCallers.length > 0)
+    document.querySelector<HTMLElement>('.game-panel')!.hidden = !showPanel
+    document.querySelector('.room-layout')!.classList.toggle('has-game-panel', showPanel)
+    document.getElementById('roundResultsTitle')!.textContent = next.phase === 'finished' ? (winners.length > 1 ? '¡Tenemos ganadores!' : '¡Tenemos ganador!') : winners.length ? 'Premios de esta partida' : 'Salieron todos los números'
+    const winnerList = document.getElementById('roundWinners')!
+    winnerList.replaceChildren()
+    for (const winner of winners) {
+      const item = document.createElement('p')
+      item.className = 'winner-line'
+      item.textContent = `${winner.name} · ${prizeName(winner.type)}`
+      winnerList.appendChild(item)
     }
-  })
-
-  resetButton.addEventListener('click', async () => {
-    closeDropdownMenu()
-    const room = await getLatestRoom()
-    if (room.drawnNumbers.length === 0) return
-
-    const confirmed = await Swal.fire({
-      title: '¿Reiniciar el juego?',
-      icon: 'warning',
-      showCancelButton: true,
-      confirmButtonText: 'Sí, reiniciar',
-      background: '#111827', color: '#fff', confirmButtonColor: '#ff0055'
-    })
-
-    if (confirmed.isConfirmed) {
-      socket.emit('updateRoom', roomData.id, { drawnNumbers: [] })
-    }
-  })
-
-  configButton.addEventListener('click', async () => {
-    closeDropdownMenu()
-    const room = await getLatestRoom()
-
-    const { isConfirmed } = await Swal.fire({
-      title: '¿Cambiar rango de Bingo?',
-      text: 'Al cambiar el rango, el juego actual se borrará por completo y se creará un nuevo tablero. ¿Deseas continuar?',
-      icon: 'warning',
-      showCancelButton: true,
-      confirmButtonText: 'Sí, continuar',
-      cancelButtonText: 'Cancelar',
-      background: '#111827', color: '#fff', confirmButtonColor: '#ff0055'
-    })
-
-    if (!isConfirmed) return
-
-    const { value } = await Swal.fire({
-      title: 'Configurar Rango',
-      input: 'number',
-      inputValue: room.maxNumber,
-      showCancelButton: true,
-      background: '#111827', color: '#fff', confirmButtonColor: '#b026ff',
-      inputValidator: (value) => {
-        if (!value || parseInt(value) < 10 || parseInt(value) > 150) {
-          return 'Ingresa un número entre 10 y 150'
-        }
-        return null;
+    document.getElementById('roundResultsHint')!.textContent = next.bingoCallers.length ? 'Todavía hay avisos por revisar. Confirma a los demás ganadores antes de empezar otra partida.' : next.phase === 'finished' ? role === 'host' ? 'Cuando todos estén listos, puedes empezar de nuevo con el mismo código.' : 'El anfitrión avisará cuando comience la siguiente partida. Quédate en esta sala.' : 'El Binguito no termina la partida. Pueden seguir jugando hasta completar el cartón.'
+    const newGame = document.getElementById('newGameBtn') as HTMLButtonElement | null
+    if (newGame) { newGame.hidden = next.phase !== 'finished' && next.drawnNumbers.length < next.maxNumber; newGame.disabled = !ready }
+    const searchInput = document.getElementById('searchNumber') as HTMLInputElement
+    searchInput.max = String(next.maxNumber)
+    for (const input of app.querySelectorAll<HTMLInputElement>('#inputNumber, #searchNumber')) {
+      if (!sameRound) {
+        input.value = ''
+        input.dataset.validValue = ''
+        input.setCustomValidity('')
+        input.removeAttribute('aria-invalid')
       }
-    })
-
-    if (value && parseInt(value) !== room.maxNumber) {
-      socket.emit('updateRoom', roomData.id, { maxNumber: parseInt(value), drawnNumbers: [], currentMode: 'manual', tombolaActive: false, tombolaTarget: null })
     }
-  })
-
-  if (winnersHistoryBtn) {
-    winnersHistoryBtn.addEventListener('click', async () => {
-      closeDropdownMenu()
-      const room = await getLatestRoom()
-
-      const winners = room.winnersHistory || []
-      if (winners.length === 0) {
-        Swal.fire({ title: 'Historial Vacío', text: 'Aún no hay ganadores en esta sala.', icon: 'info', background: '#111827', color: '#fff' })
-        return
+    if (!sameRound) {
+      document.querySelectorAll('.input-error').forEach(el => el.classList.remove('input-error'))
+      const manualHint = document.getElementById('manualNumberHint')
+      if (manualHint) manualHint.textContent = ''
+    }
+    if (next.tombolaActive) showOverlay(next.maxNumber)
+    else if (wasDrawing && sameRound) finishOverlay(next.drawnNumbers.at(-1))
+    else if (!sameRound) stopOverlay()
+    if (notify && sameRound && next.drawnNumbers.length > lastDrawnCount) {
+      const number = document.getElementById('currentLastNumber')!
+      number.getAnimations().forEach(animation => animation.cancel())
+      if (!matchMedia('(prefers-reduced-motion: reduce)').matches) {
+        number.animate([{ transform: 'scale(1)' }, { transform: 'scale(1.28)', filter: 'drop-shadow(0 0 20px #00f0ff)' }, { transform: 'scale(1)' }], { duration: 500 })
+        confetti({ particleCount: 100, spread: 70, origin: { y: 0.3 }, colors: ['#b026ff', '#00f0ff', '#ff0055', '#39ff14'], disableForReducedMotion: true })
       }
-
-      const winnersHtml = winners.map(w => {
-        const isBinguito = w.type.toLowerCase().includes('binguito');
-        const theme = isBinguito ? {
-          text: 'text-emerald-400',
-          bg: 'bg-emerald-900/30',
-          border: 'border-emerald-500',
-          shadow: 'shadow-[0_0_15px_rgba(16,185,129,0.3)]',
-          icon: 'fa-check-double'
-        } : {
-          text: 'text-neon-blue',
-          bg: 'bg-blue-900/30',
-          border: 'border-neon-blue',
-          shadow: 'shadow-[0_0_15px_rgba(0,240,255,0.3)]',
-          icon: 'fa-trophy'
-        };
-        
-        return `
-        <div class="${theme.bg} rounded-xl p-4 mb-3 text-left border border-gray-700/50 border-l-4 ${theme.border} ${theme.shadow} relative overflow-hidden group hover:scale-[1.02] transition-transform cursor-default">
-          <div class="absolute -right-2 -top-2 opacity-10 group-hover:opacity-20 transition-opacity transform group-hover:scale-110 group-hover:rotate-12 duration-500">
-            <i class="fas ${theme.icon} text-7xl ${theme.text}"></i>
-          </div>
-          <p class="font-black ${theme.text} text-xl flex items-center gap-2 relative z-10">
-            <i class="fas ${theme.icon}"></i> ${w.name}
-          </p>
-          <div class="flex justify-between items-center text-xs text-gray-300 mt-3 relative z-10">
-            <span class="uppercase tracking-widest font-bold bg-black/40 px-2.5 py-1 rounded-md ${theme.text}">${w.type}</span>
-            <span class="flex items-center gap-1.5 opacity-80"><i class="far fa-clock"></i> ${new Date(w.date).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
-          </div>
-        </div>
-        `
-      }).reverse().join('');
-
-      Swal.fire({
-        title: '🏆 Historial de Ganadores',
-        html: `<div class="max-h-60 overflow-y-auto mt-4 pr-2 font-inter">${winnersHtml}</div>`,
-        background: '#111827',
-        color: '#fff',
-        showCancelButton: true,
-        cancelButtonText: '🗑️ Vaciar Historial',
-        cancelButtonColor: '#ef4444',
-        confirmButtonText: 'Cerrar',
-        confirmButtonColor: '#b026ff'
-      }).then(async (result) => {
-        if (result.dismiss === Swal.DismissReason.cancel) {
-          const confirm = await Swal.fire({
-            title: '¿Estás seguro?',
-            text: "Se borrarán todos los registros de esta sala.",
-            icon: 'warning',
-            showCancelButton: true,
-            confirmButtonColor: '#d33',
-            cancelButtonColor: '#3085d6',
-            confirmButtonText: 'Sí, borrar todo',
-            cancelButtonText: 'Cancelar',
-            background: '#111827',
-            color: '#fff'
-          });
-          if (confirm.isConfirmed) {
-            socket.emit('updateRoom', roomData.id, { winnersHistory: [] });
-            Swal.fire({ title: '¡Borrado!', text: 'El historial está limpio.', icon: 'success', background: '#111827', color: '#fff', timer: 2000, showConfirmButton: false });
-          }
-        }
-      })
-    })
+    }
+    if (notify && role === 'player' && myWins.length) {
+      const winner = myWins.at(-1)!
+      void dialog.fire({ icon: 'success', title: '¡Felicitaciones!', text: `El anfitrión confirmó tu ${prizeName(winner.type)}.`, confirmButtonText: '¡Qué alegría!' })
+      celebrate()
+    } else if (notify && role === 'host' && newWinners.some(w => w.roundId === next.roundId)) {
+      celebrate()
+    } else if (notify && previous && !sameRound && role === 'player') {
+      void dialog.fire({ title: `¡Comienza la partida ${next.roundNumber}!`, text: 'Prepara tu cartón. El tablero vuelve a empezar y sigues en la misma sala.', confirmButtonText: 'Estoy listo' })
+    }
+    if (notify && previous && !sameRound && !matchMedia('(prefers-reduced-motion: reduce)').matches) {
+      document.getElementById('bingoBoard')!.animate([
+        { opacity: 0, transform: 'scale(.92)', filter: 'blur(12px)' },
+        { opacity: 1, transform: 'scale(1)', filter: 'blur(0)' }
+      ], { duration: 800, easing: 'cubic-bezier(.16,1,.3,1)' })
+    }
+    knownWinners = new Set(next.winnersHistory.map(w => w.id))
+    lastRoundId = next.roundId
+    lastDrawnCount = next.drawnNumbers.length
+    wasDrawing = next.tombolaActive
+    if (!ready) app.querySelectorAll<HTMLButtonElement | HTMLInputElement>('.primary-controls button, .primary-controls input, .game-panel button, .options-panel button:not(#closeOptionsBtn), .options-panel input').forEach(el => { el.disabled = true })
   }
 
-  if (toggleModeBtnControls) {
-    toggleModeBtnControls.addEventListener('click', async () => {
-      closeDropdownMenu()
-      const room = await getLatestRoom()
-      const newMode = room.currentMode === 'manual' ? 'tombola' : 'manual'
-      socket.emit('updateRoom', room.id, { currentMode: newMode })
-    })
+  function celebrate() {
+    if (matchMedia('(prefers-reduced-motion: reduce)').matches) return
+    clearInterval(celebrationTimer)
+    const end = Date.now() + 3000
+    const burst = () => {
+      confetti({ particleCount: 35, spread: 90, startVelocity: 35, origin: { x: .15, y: .35 }, colors: ['#b026ff', '#00f0ff', '#39ff14'], disableForReducedMotion: true })
+      confetti({ particleCount: 35, spread: 90, startVelocity: 35, origin: { x: .85, y: .35 }, colors: ['#ff0055', '#ffffff', '#00f0ff'], disableForReducedMotion: true })
+    }
+    burst()
+    celebrationTimer = setInterval(() => { if (Date.now() >= end) clearInterval(celebrationTimer); else burst() }, 300)
   }
+
+  function showOverlay(maxNumber: number) {
+    clearTimeout(overlayHideTimer)
+    if (document.getElementById('tombola-overlay')) {
+      if (overlayTimer) return
+      document.getElementById('tombola-overlay')!.remove()
+    }
+    const overlay = document.createElement('div')
+    overlay.id = 'tombola-overlay'
+    overlay.className = 'tombola-overlay'
+    overlay.setAttribute('role', 'status')
+    overlay.innerHTML = '<span class="tombola-label">La tómbola está girando</span><div class="tombola-ball"><strong id="tombola-number-display">•</strong></div><p>El número aparecerá en tu tablero</p>'
+    document.body.appendChild(overlay)
+    if (!matchMedia('(prefers-reduced-motion: reduce)').matches) overlayTimer = setInterval(() => {
+      const display = document.getElementById('tombola-number-display')
+      if (display) display.textContent = String(Math.floor(Math.random() * maxNumber) + 1)
+    }, 50)
+  }
+  function finishOverlay(number: number | undefined) {
+    clearInterval(overlayTimer)
+    overlayTimer = undefined
+    const overlay = document.getElementById('tombola-overlay')
+    if (!overlay) return
+    overlay.classList.add('draw-complete')
+    overlay.querySelector('.tombola-label')!.textContent = '¡Salió el número!'
+    document.getElementById('tombola-number-display')!.textContent = String(number ?? '—')
+    overlay.querySelector('p')!.textContent = 'Revisa tu cartón'
+    overlayHideTimer = setTimeout(stopOverlay, 1500)
+  }
+
+  async function startNewRound() {
+    if (!room) return
+    const roundId = room.roundId
+    const pending = room.bingoCallers.length
+    const result = await dialog.fire({
+      icon: 'question', title: '¿Iniciar un nuevo juego?',
+      text: `${pending ? `Quedan ${pending} avisos de Bingo por revisar. ` : ''}Se limpiarán los números y los avisos de esta partida. Los jugadores seguirán en la sala y los premios quedarán en el historial.`,
+      showCancelButton: true, confirmButtonText: 'Sí, iniciar nuevo juego', cancelButtonText: 'Seguir en esta partida', focusCancel: true
+    })
+    if (result.isConfirmed && !disposed) await run('newRound', {}, roundId)
+  }
+  function closeMobileSearch() {
+    document.getElementById('searchForm')?.classList.remove('is-open')
+    document.getElementById('toggleSearchBtn')?.setAttribute('aria-expanded', 'false')
+  }
+  async function onClick(event: Event) {
+    const target = (event.target as HTMLElement).closest<HTMLButtonElement>('button')
+    if (!target || target.disabled || disposed) return
+    const id = target.id
+    if (id === 'roomCodeDisplay') {
+      try { await navigator.clipboard.writeText(code); await dialog.fire({ title: 'Código copiado', text: 'Compártelo con tu familia para que entre a esta sala.', icon: 'success' }) }
+      catch { await dialog.fire({ title: 'Comparte este código', text: code }) }
+      return
+    }
+    if (id === 'toggleSearchBtn') {
+      const search = document.getElementById('searchForm')!
+      const open = !search.classList.contains('is-open')
+      search.classList.toggle('is-open', open)
+      target.setAttribute('aria-expanded', String(open))
+      if (open) {
+        (document.getElementById('roomOptions') as HTMLDetailsElement).open = false
+        document.getElementById('searchNumber')?.focus()
+      }
+      return
+    }
+    if (id === 'closeOptionsBtn') { (document.getElementById('roomOptions') as HTMLDetailsElement).open = false; return }
+    if (!ready) return
+    if (id === 'drawTombolaModeBtn') {
+      target.disabled = true
+      await run('drawNumber')
+      if (room && !disposed) render(room, false)
+    } else if (id === 'tombolaModeBtn' || id === 'manualModeBtn') {
+      await run('setMode', { mode: id === 'tombolaModeBtn' ? 'tombola' : 'manual' })
+      if (!disposed) (document.getElementById('roomOptions') as HTMLDetailsElement).open = false
+    } else if (id === 'newGameBtn' || id === 'resetGameBtnControls') await startNewRound()
+    else if (id === 'playerBingoBtn') {
+      const roundId = room!.roundId
+      const answer = await dialog.fire({ title: '¿Tienes Bingo?', text: 'Comprueba tu cartón. Avisaremos al anfitrión para que revise tu premio.', icon: 'question', showCancelButton: true, confirmButtonText: 'Sí, avisar al anfitrión', cancelButtonText: 'Volver a mi cartón' })
+      if (answer.isConfirmed && !disposed) await run('addBingoCaller', {}, roundId)
+    } else if (target.dataset.prize && room) {
+      if (pendingReview) return
+      const caller = room.bingoCallers.find(c => c.playerId === target.dataset.playerId)
+      if (!caller) return
+      const type = target.dataset.prize
+      const roundId = room.roundId
+      pendingReview = caller.playerId
+      try {
+        const answer = await dialog.fire({ title: type === 'false' ? '¿Descartar este aviso?' : `¿Confirmar ${type === 'carton' ? 'cartón lleno' : 'Binguito'}?`, text: type === 'false' ? `El aviso de ${caller.name} se quitará de la lista. Podrá avisar otra vez si corresponde.` : `Confirma que revisaste el cartón de ${caller.name}.${type === 'carton' ? ' Se detendrán los números y podrás revisar a los otros ganadores.' : ' La partida continuará.'}`, showCancelButton: true, confirmButtonText: type === 'false' ? 'Sí, descartar aviso' : 'Confirmar premio', focusCancel: true })
+        if (answer.isConfirmed && !disposed) await run('resolveBingo', { playerId: caller.playerId, type }, roundId)
+      } finally { pendingReview = '' }
+    } else if (id === 'configMaxNumBtnControls' && room) {
+      const roundId = room.roundId
+      const answer = await dialog.fire({ title: 'Cantidad de números', text: 'Elige entre 10 y 150. Al cambiar el rango empezará otra partida; conservarás la sala y los premios anteriores.', input: 'number', inputValue: room.maxNumber, inputAttributes: { min: '10', max: '150', step: '1', inputmode: 'numeric' }, showCancelButton: true, confirmButtonText: 'Cambiar e iniciar partida', focusCancel: true, inputValidator: value => Number.isInteger(Number(value)) && Number(value) >= 10 && Number(value) <= 150 ? undefined : 'Escribe un número entero entre 10 y 150.' })
+      if (answer.isConfirmed && Number(answer.value) !== room?.maxNumber && !disposed) await run('configureRoom', { maxNumber: Number(answer.value) }, roundId)
+    } else if (id === 'winnersHistoryBtnControls' && room) {
+      const history = [...room.winnersHistory].reverse()
+      await dialog.fire({ title: 'Premios de la sala', html: history.length ? `<div class="prize-history">${history.map(w => `<article><strong>${escapeHtml(w.name)}</strong><span>${prizeName(w.type)} · Partida ${w.roundNumber}</span></article>`).join('')}</div>` : '<p>Aún no hay premios confirmados. Los próximos aparecerán aquí.</p>', confirmButtonText: 'Volver al tablero' })
+    }
+  }
+  function isValidNumberValue(value: string) {
+    return value === '' || (/^[1-9][0-9]*$/.test(value) && Number(value) <= (room?.maxNumber ?? 0))
+  }
+  function setNumberValidity(input: HTMLInputElement, valid: boolean) {
+    const message = `Solo números enteros del 1 al ${room?.maxNumber}.`
+    input.setCustomValidity(valid ? '' : message)
+    input.setAttribute('aria-invalid', String(!valid))
+    const feedback = document.getElementById(input.id === 'searchNumber' ? 'searchResult' : 'manualNumberHint')
+    if (!feedback) return
+    const wasInvalid = feedback.classList.contains('input-error')
+    feedback.classList.toggle('input-error', !valid)
+    if (!valid) feedback.textContent = message
+    else if (wasInvalid) feedback.textContent = ''
+  }
+  function onBeforeNumberInput(event: Event) {
+    const input = event.target as HTMLInputElement
+    if (!['inputNumber', 'searchNumber'].includes(input.id) || !room) return
+    const change = event as InputEvent
+    if (!change.inputType?.startsWith('insert') || change.data === null || change.isComposing) return
+    const start = input.selectionStart ?? input.value.length
+    const end = input.selectionEnd ?? start
+    const candidate = input.value.slice(0, start) + change.data + input.value.slice(end)
+    if (!isValidNumberValue(candidate)) {
+      event.preventDefault()
+      setNumberValidity(input, false)
+    }
+  }
+  function onNumberInput(event: Event) {
+    const input = event.target as HTMLInputElement
+    if (!['inputNumber', 'searchNumber'].includes(input.id) || !room) return
+    const valid = isValidNumberValue(input.value)
+    if (valid) input.dataset.validValue = input.value
+    else input.value = input.dataset.validValue || ''
+    setNumberValidity(input, valid)
+  }
+  async function onSubmit(event: Event) {
+    const form = event.target as HTMLFormElement
+    if (!['manualNumberForm', 'searchForm'].includes(form.id)) return
+    event.preventDefault()
+    if (!room || !ready || !form.reportValidity()) return
+    const input = form.querySelector('input')!
+    const number = Number(input.value)
+    if (!/^[1-9][0-9]*$/.test(input.value) || !Number.isInteger(number) || number > room.maxNumber) {
+      setNumberValidity(input, false)
+      input.reportValidity()
+      return
+    }
+    if (form.id === 'searchForm') {
+      const drawn = room.drawnNumbers.includes(number)
+      const feedback = document.getElementById('searchResult')!
+      feedback.textContent = drawn ? `${number}: ya salió ✓` : `${number}: no ha salido.`
+      feedback.classList.toggle('input-error', !drawn)
+      document.querySelectorAll('.search-match').forEach(el => el.classList.remove('search-match'))
+      document.querySelectorAll('.snake-container').forEach(el => el.remove())
+      input.value = ''
+      input.dataset.validValue = ''
+      if (drawn) {
+        const cell = document.querySelector(`[data-number="${number}"]`)
+        cell?.classList.add('search-match')
+        if (cell) {
+          const border = document.createElement('span')
+          border.className = 'snake-container'
+          border.setAttribute('aria-hidden', 'true')
+          border.innerHTML = '<span></span><span></span><span></span><span></span>'
+          cell.appendChild(border)
+        }
+        input.focus()
+      } else {
+        await dialog.fire({
+          icon: 'warning', title: `El ${number} no ha salido`,
+          text: 'Este número no está marcado en el tablero. Revisa el cartón antes de confirmar el Bingo.',
+          confirmButtonText: 'Seguir revisando', returnFocus: false,
+          didClose: () => { if (!disposed && input.isConnected && !input.disabled) input.focus() }
+        })
+      }
+    } else {
+      if (room.drawnNumbers.includes(number)) { await dialog.fire({ title: 'Ese número ya está marcado', text: `El ${number} ya salió. Puedes ingresar el siguiente.` }); return }
+      await run('setNumber', { number, drawn: true })
+      input.value = ''
+      input.dataset.validValue = ''
+      input.focus()
+    }
+  }
+  async function initialize() {
+    try {
+      if (role === 'player' && !name) {
+        const answer = await dialog.fire({ title: '¿Cómo te llamas?', text: 'Ingresa tu nombre real para que el anfitrión te reconozca cuando cantes Bingo.', input: 'text', inputPlaceholder: 'Ej. Pedro Pérez', inputAttributes: { maxlength: '40', autocomplete: 'name' }, showCancelButton: true, confirmButtonText: 'Entrar a la sala', inputValidator: value => value.trim() && value.trim().length <= 40 ? undefined : 'Escribe un nombre de hasta 40 caracteres.' })
+        if (disposed) return
+        if (!answer.isConfirmed) { window.location.hash = '#/join'; return }
+        name = String(answer.value).trim()
+        sessionStorage.setItem(`bingo_player_name_${code}`, name)
+      }
+      const response = await joinGameRoom(code, role, name, signal)
+      if (disposed) return
+      mount()
+      ready = socket.connected
+      render(response.room, false)
+      setConnection(ready)
+    } catch (error) {
+      if (disposed) return
+      app.innerHTML = '<div class="room-loading"><h1>No pudimos abrir la sala</h1><p>Revisa la conexión o pide el código al anfitrión.</p><button id="retryJoin" class="action-button primary-action">Volver a intentar</button><a href="#/" class="text-action">Volver al inicio</a></div>'
+      document.getElementById('retryJoin')!.onclick = () => { if (!disposed) void initialize() }
+      await showError(error)
+    }
+  }
+  void initialize()
 }

@@ -1,0 +1,9 @@
+.git
+.firebase
+node_modules
+**/node_modules
+dist
+output
+.playwright-cli
+*.log
+.env*

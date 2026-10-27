@@ -1,17 +1,4 @@
-import { socket } from '../services/socket'
-import Swal from 'sweetalert2'
-
-async function findRoomByCode(code: string): Promise<any> {
-  return new Promise((resolve) => {
-    socket.emit('joinRoom', code, (response: any) => {
-      if (response && response.success) {
-        resolve(response.room)
-      } else {
-        resolve(null)
-      }
-    })
-  })
-}
+import { request, waitForConnection } from '../services/socket'
 
 export function renderJoinGame() {
   const app = document.querySelector<HTMLDivElement>('#app')!
@@ -30,18 +17,18 @@ export function renderJoinGame() {
         </div>
         
         <p class="text-lg font-inter text-gray-300 mb-8 opacity-90">
-          Ingresa el código para unirte.
+          Pide el código de seis caracteres a quien dirige la partida.
         </p>
 
-        <div class="relative mb-8">
+        <form id="joinForm"><div class="relative mb-8">
           <div class="absolute inset-y-0 left-0 pl-4 flex items-center pointer-events-none">
              <i class="fa-solid fa-key text-gray-500"></i>
           </div>
           <input
             type="text"
             id="gameCodeInput"
-            placeholder="EJ: ABC123DEF"
-            maxlength="10"
+            placeholder="EJ: ABC234"
+            maxlength="6" minlength="6" pattern="[a-zA-Z0-9]{6}" autocomplete="off" autocapitalize="characters" required
             class="
               w-full bg-gray-900/50 border-2 border-gray-700 text-white text-center text-2xl font-black tracking-widest
               rounded-xl px-10 py-4 focus:outline-none focus:border-neon-blue focus:ring-1 focus:ring-neon-blue
@@ -59,7 +46,7 @@ export function renderJoinGame() {
             <span class="text-lg tracking-wide">Ingresar</span>
             <i class="fa-solid fa-rocket group-hover:translate-x-1 group-hover:-translate-y-1 transition-transform"></i>
           </div>
-        </button>
+        </button><p id="joinError" class="text-red-300 mt-4" role="alert"></p></form>
       </div>
       
       <button onclick="window.location.hash='#/'" class="mt-8 text-gray-400 hover:text-white transition-colors flex items-center gap-2">
@@ -68,45 +55,21 @@ export function renderJoinGame() {
     </div>
   `
 
-  const joinBtn = document.getElementById('joinRoomBtn') as HTMLButtonElement
+  const form = document.getElementById('joinForm') as HTMLFormElement
   const input = document.getElementById('gameCodeInput') as HTMLInputElement
-
-  joinBtn.addEventListener('click', async () => {
+  const button = document.getElementById('joinRoomBtn') as HTMLButtonElement
+  form.addEventListener('submit', async event => {
+    event.preventDefault()
+    if (button.disabled) return
+    button.disabled = true
+    button.textContent = 'Buscando la sala…'
     const code = input.value.trim().toUpperCase()
-
-    if (!code) {
-      Swal.fire({
-        title: 'Código Requerido',
-        text: 'Por favor, ingresa el código de la sala.',
-        icon: 'warning',
-        background: '#111827',
-        color: '#fff',
-        confirmButtonColor: '#b026ff',
-      })
-      return
-    }
-
-    const room = await findRoomByCode(code)
-
-    if (!room) {
-      Swal.fire({
-        title: 'Sala No Encontrada',
-        text: 'No se encontró ninguna sala con ese código.',
-        icon: 'error',
-        background: '#111827',
-        color: '#fff',
-        confirmButtonColor: '#ff0055',
-      })
-      return
-    }
-
-    window.location.hash = `#/room/${code}?role=player`
+    try {
+      await waitForConnection()
+      await request('getRoomInfo', { code })
+      if (form.isConnected) window.location.hash = `#/room/${code}?role=player`
+    } catch (error) {
+      if (form.isConnected) document.getElementById('joinError')!.textContent = error instanceof Error ? error.message : 'No pudimos abrir la sala. Inténtalo otra vez.'
+    } finally { button.disabled = false; button.textContent = 'Continuar' }
   })
-
-  input.addEventListener('keydown', (e) => {
-    if (e.key === 'Enter') {
-      e.preventDefault();
-      joinBtn.click();
-    }
-  });
 }

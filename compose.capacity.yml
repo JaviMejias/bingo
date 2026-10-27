@@ -1,0 +1,13 @@
+services:
+  bingo_capacity:
+    build: ./backend
+    ports:
+      - "127.0.0.1:4401:4001"
+    environment:
+      PORT: 4001
+    mem_limit: 256m
+    logging:
+      driver: json-file
+      options:
+        max-size: "5m"
+        max-file: "2"

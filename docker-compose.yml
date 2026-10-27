@@ -1,5 +1,3 @@
-version: '3.8'
-
 services:
   bingo_backend:
     build: ./backend
@@ -9,6 +7,11 @@ services:
     environment:
       - PORT=4001
     restart: unless-stopped
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
 
   bingo_frontend:
     build: .
@@ -16,5 +19,10 @@ services:
     ports:
       - "8081:80"
     restart: unless-stopped
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
     depends_on:
       - bingo_backend

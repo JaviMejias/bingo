@@ -19,12 +19,12 @@ export async function renderCreateGame() {
         </div>
         
         <p class="text-lg font-inter text-gray-300 mb-8 opacity-90">
-          Generando acceso exclusivo...
+          Comparte este código con tu familia para que entre a la sala.
         </p>
         
-        <div class="relative group mx-auto max-w-[250px] mb-10">
+        <div class="relative group mx-auto w-full max-w-[340px] mb-10">
           <div class="absolute -inset-1 bg-gradient-to-r from-neon-purple to-neon-blue rounded-2xl blur opacity-30 group-hover:opacity-60 transition duration-1000 group-hover:duration-200 animate-pulse-glow"></div>
-          <div id="roomCode" class="relative text-5xl sm:text-6xl font-black bg-gray-900 text-white border border-gray-700 rounded-2xl px-6 py-5 shadow-2xl tracking-widest min-w-[200px] flex items-center justify-center animate-pulse">
+          <div id="roomCode" class="created-room-code relative font-black bg-gray-900 text-white border border-gray-700 rounded-2xl shadow-2xl flex items-center justify-center animate-pulse">
             <i class="fa-solid fa-spinner fa-spin text-3xl text-neon-blue"></i>
           </div>
         </div>
@@ -36,10 +36,11 @@ export async function renderCreateGame() {
           hidden transform hover:scale-105
         ">
           <div class="flex items-center justify-center gap-3 relative z-10">
-            <span class="text-lg tracking-wide">¡Entrar a la Sala!</span>
+            <span class="text-lg tracking-wide">Abrir mi tablero</span>
             <i class="fa-solid fa-arrow-right group-hover:translate-x-2 transition-transform"></i>
           </div>
         </button>
+        <p id="createError" class="text-red-300 mt-4" role="alert"></p>
       </div>
       
       <button onclick="window.location.hash='#/'" class="mt-8 text-gray-400 hover:text-white transition-colors flex items-center gap-2">
@@ -48,22 +49,27 @@ export async function renderCreateGame() {
     </div>
   `
 
-  const codeElement = document.getElementById('roomCode') as HTMLDivElement
-  const goToRoomBtn = document.getElementById('goToRoomBtn') as HTMLButtonElement
-
-  try {
-    const room = await createGameRoom()
-
-    codeElement.classList.remove('animate-pulse')
-    codeElement.innerHTML = `<span class="text-transparent bg-clip-text bg-gradient-to-r from-white to-gray-300">${room.code}</span>`
-    goToRoomBtn.classList.remove('hidden')
-
-    goToRoomBtn.addEventListener('click', () => {
-      window.location.hash = `#/room/${room.code}?role=host`
-    })
-  } catch (error) {
-    codeElement.innerHTML = '<span class="text-3xl text-neon-pink">Error</span>'
-    codeElement.classList.remove('animate-pulse')
-    console.error('Error creando la sala:', error)
+  const codeElement = document.getElementById('roomCode')!
+  const button = document.getElementById('goToRoomBtn') as HTMLButtonElement
+  async function create() {
+    button.disabled = true
+    try {
+      const room = await createGameRoom()
+      if (!codeElement.isConnected) return
+      codeElement.textContent = room.code
+      button.disabled = false
+      button.classList.remove('hidden')
+      button.textContent = 'Abrir mi tablero de anfitrión'
+      button.onclick = () => { window.location.hash = `#/room/${room.code}?role=host` }
+    } catch (error) {
+      if (!codeElement.isConnected) return
+      codeElement.textContent = '—'
+      document.getElementById('createError')!.textContent = error instanceof Error ? error.message : 'No pudimos crear la sala.'
+      button.disabled = false
+      button.classList.remove('hidden')
+      button.textContent = 'Volver a intentar'
+      button.onclick = () => { void create() }
+    }
   }
+  await create()
 }

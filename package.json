@@ -4,10 +4,12 @@
   "version": "0.0.0",
   "type": "module",
   "scripts": {
-    "dev": "concurrently \"vite\" \"npm --prefix backend run dev\"",
+    "predev": "node scripts/check-dev-ports.mjs",
+    "dev": "concurrently --kill-others-on-fail --names frontend,backend \"vite --port 5173 --strictPort\" \"npm --prefix backend run dev\"",
     "build": "tsc && vite build",
     "preview": "vite preview",
-    "install:all": "npm install && npm --prefix backend install"
+    "install:all": "npm install && npm --prefix backend install",
+    "test:capacity": "node scripts/capacity-test.mjs"
   },
   "devDependencies": {
     "@types/canvas-confetti": "^1.9.0",

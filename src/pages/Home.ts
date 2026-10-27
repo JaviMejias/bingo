@@ -1,4 +1,6 @@
 export function HomePage() {
+  const code = localStorage.getItem('bingo_last_host_code')
+  const resumeCode = code && /^[A-Z0-9]{6}$/.test(code) ? code : null
   const root = document.querySelector('#app')!
   root.innerHTML = `
     <div class="min-h-screen flex flex-col items-center justify-center p-4 sm:p-6 lg:p-8 relative overflow-hidden">
@@ -18,7 +20,7 @@ export function HomePage() {
         </div>
 
         <p class="text-lg sm:text-xl font-inter text-gray-300 mb-10 opacity-90">
-          ¡Tu experiencia multijugador premium!
+          Crea una sala para dirigir o únete con el código de tu familia.
         </p>
         
         <div class="flex flex-col gap-5">
@@ -29,7 +31,7 @@ export function HomePage() {
           ">
             <div class="flex items-center justify-center gap-3">
               <i class="fa-solid fa-plus-circle text-xl text-neon-purple group-hover:text-white transition-colors"></i>
-              <span class="text-lg tracking-wide">Crear Sala</span>
+              <span class="text-lg tracking-wide">Crear Sala <span class="block text-xs font-normal text-gray-300 mt-1">Yo dirijo la partida</span></span>
             </div>
           </button>
           
@@ -40,16 +42,13 @@ export function HomePage() {
           ">
             <div class="flex items-center justify-center gap-3">
               <i class="fa-solid fa-sign-in-alt text-xl text-neon-blue group-hover:text-white transition-colors"></i>
-              <span class="text-lg tracking-wide">Unirse a Sala</span>
+              <span class="text-lg tracking-wide">Unirse a Sala <span class="block text-xs font-normal text-gray-300 mt-1">Yo voy a jugar</span></span>
             </div>
           </button>
         </div>
+        ${resumeCode ? `<a href="#/room/${resumeCode}?role=host" class="block mt-7 text-neon-blue hover:text-white underline underline-offset-4 py-3">Volver a mi sala · ${resumeCode}</a>` : ''}
       </div>
       
-      <div class="mt-8 text-gray-500 font-inter text-sm flex items-center gap-2 animate-slide-up" style="animation-delay: 0.2s">
-        <i class="fa-solid fa-shield-halved"></i>
-        <span>Conexión Segura</span>
-      </div>
     </div>
   `
   document.getElementById('createBtn')?.addEventListener('click', () => {
